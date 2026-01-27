@@ -1,5 +1,7 @@
 # Browser Automation Agent
 
+https://github.com/user-attachments/assets/3a8eb3bf-007a-41aa-ba13-d42359c4d1c9
+
 A Chrome extension that automates browser tasks using vision and reasoning models.
 
 Built by [Perceptron](https://perceptron.inc).
