@@ -20,6 +20,21 @@ function loadEnv() {
 
 const env = loadEnv();
 
+// Required environment variables
+const requiredEnvVars = [
+  "PERCEPTRON_API_KEY",
+  "VISION_MODEL",
+  "REASONING_API_URL",
+  "REASONING_API_KEY",
+  "REASONING_MODEL",
+];
+const missing = requiredEnvVars.filter((key) => !env[key]);
+if (missing.length > 0) {
+  console.error("Missing required environment variables:", missing.join(", "));
+  console.error("Please add them to your .env file");
+  process.exit(1);
+}
+
 const isWatch = process.argv.includes("--watch");
 
 // Ensure dist directory exists
@@ -52,7 +67,10 @@ const commonOptions = {
   minify: false,
   define: {
     "process.env.PERCEPTRON_API_KEY": JSON.stringify(env.PERCEPTRON_API_KEY),
-    "process.env.OPENAI_API_KEY": JSON.stringify(env.OPENAI_API_KEY),
+    "process.env.VISION_MODEL": JSON.stringify(env.VISION_MODEL),
+    "process.env.REASONING_API_URL": JSON.stringify(env.REASONING_API_URL),
+    "process.env.REASONING_API_KEY": JSON.stringify(env.REASONING_API_KEY),
+    "process.env.REASONING_MODEL": JSON.stringify(env.REASONING_MODEL),
   },
   jsx: "automatic",
   jsxImportSource: "preact",

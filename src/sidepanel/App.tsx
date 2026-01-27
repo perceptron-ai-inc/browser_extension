@@ -184,11 +184,8 @@ export function App() {
   return (
     <div class="container">
       <header class="header">
-        <div class="header-left">
-          <div class={`status-dot ${status !== "idle" ? status : ""}`} />
-          <span class="title">Browser Agent</span>
-        </div>
-        <span class="subtitle">Isaac + GPT-5.2</span>
+        <div class={`status-dot ${status !== "idle" ? status : ""}`} />
+        <span class="title">Browser Agent</span>
       </header>
 
       <div class="messages" ref={messagesRef}>

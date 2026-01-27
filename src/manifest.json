@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Browser Automation Agent",
   "version": "1.0.0",
-  "description": "Automates browser actions using Isaac vision model and GPT-5.2 reasoning model",
+  "description": "Automates browser actions using vision and reasoning models",
   "permissions": ["activeTab", "scripting", "tabs", "sidePanel", "debugger"],
   "host_permissions": ["<all_urls>"],
   "side_panel": {

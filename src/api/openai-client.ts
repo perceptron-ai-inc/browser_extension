@@ -1,15 +1,17 @@
 import type { ScreenAnalysis, ActionDecision, ActionHistoryEntry } from "../types.js";
 import { ChatClient } from "./chat-client.js";
 
-// API keys injected at build time from .env
+// Configuration injected at build time from .env
 const PERCEPTRON_API_KEY = process.env.PERCEPTRON_API_KEY;
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+const VISION_MODEL = process.env.VISION_MODEL;
+
+const REASONING_API_URL = process.env.REASONING_API_URL;
+const REASONING_API_KEY = process.env.REASONING_API_KEY;
+const REASONING_MODEL = process.env.REASONING_MODEL;
 
 // Initialize clients
-const perceptron = new ChatClient("https://api.perceptron.inc/v1", PERCEPTRON_API_KEY);
-const openai = new ChatClient("https://api.openai.com/v1", OPENAI_API_KEY);
-
-const ISAAC_MODEL = "isaac-0.2-2b-preview";
+const visionClient = new ChatClient("https://api.perceptron.inc", PERCEPTRON_API_KEY);
+const reasoningClient = new ChatClient(REASONING_API_URL, REASONING_API_KEY);
 
 // Bounding box from vision model (normalized 0-1000)
 export interface BoundingBox {
@@ -20,7 +22,7 @@ export interface BoundingBox {
   label?: string;
 }
 
-// Parse boxes from Isaac response
+// Parse boxes from vision model response
 function parseBoxes(content: string): BoundingBox[] {
   const boxes: BoundingBox[] = [];
   const boxRegex =
@@ -47,7 +49,7 @@ export class OpenAIClient {
   }
 
   /**
-   * Find element coordinates using Isaac vision model
+   * Find element coordinates using vision model
    */
   async findElement(
     base64Image: string,
@@ -55,8 +57,8 @@ export class OpenAIClient {
     viewportWidth: number,
     viewportHeight: number,
   ): Promise<{ x: number; y: number }> {
-    const response = await perceptron.chatCompletion({
-      model: ISAAC_MODEL,
+    const response = await visionClient.chatCompletion({
+      model: VISION_MODEL,
       messages: [
         ChatClient.message("<hint>POINT</hint>", "system"),
         ChatClient.message([ChatClient.imagePart(base64Image), ChatClient.textPart(`Point to the ${description}`)]),
@@ -65,19 +67,19 @@ export class OpenAIClient {
     });
 
     const content = response.choices[0].message.content;
-    console.log(`[Isaac] Raw response: ${content}`);
-    console.log(`[Isaac] Viewport: ${viewportWidth}x${viewportHeight}`);
+    console.log(`[Vision] Raw response: ${content}`);
+    console.log(`[Vision] Viewport: ${viewportWidth}x${viewportHeight}`);
 
     const match = content.match(/(\d+)\s*,\s*(\d+)/);
     if (!match) {
-      throw new Error(`Could not parse coordinates from Isaac response: ${content}`);
+      throw new Error(`Could not parse coordinates from vision model response: ${content}`);
     }
 
     const normX = parseInt(match[1]);
     const normY = parseInt(match[2]);
     const x = Math.round((normX / 1000) * viewportWidth);
     const y = Math.round((normY / 1000) * viewportHeight);
-    console.log(`[Isaac] Normalized: (${normX}, ${normY}) -> CSS pixels: (${x}, ${y})`);
+    console.log(`[Vision] Normalized: (${normX}, ${normY}) -> CSS pixels: (${x}, ${y})`);
     return { x, y };
   }
 
@@ -92,8 +94,8 @@ export class OpenAIClient {
       ? `This is a browser page. Segment elements, focused on: ${visionFocus}`
       : "This is a browser page. Segment elements.";
 
-    const response = await perceptron.chatCompletion({
-      model: ISAAC_MODEL,
+    const response = await visionClient.chatCompletion({
+      model: VISION_MODEL,
       messages: [
         ChatClient.message("<hint>BOX</hint>", "system"),
         ChatClient.message([ChatClient.imagePart(base64Image), ChatClient.textPart(prompt)]),
@@ -105,7 +107,7 @@ export class OpenAIClient {
 
     const content = response.choices[0].message.content;
     const boxes = parseBoxes(content);
-    console.log(`[Isaac] Found ${boxes.length} boxes`);
+    console.log(`[Vision] Found ${boxes.length} boxes`);
 
     return { pageState: content, boxes };
   }
@@ -114,8 +116,8 @@ export class OpenAIClient {
    * Ask a specific question about the screenshot
    */
   async askQuestion(base64Image: string, question: string): Promise<string> {
-    const response = await perceptron.chatCompletion({
-      model: ISAAC_MODEL,
+    const response = await visionClient.chatCompletion({
+      model: VISION_MODEL,
       messages: [
         ChatClient.message([
           ChatClient.imagePart(base64Image),
@@ -132,7 +134,7 @@ export class OpenAIClient {
   }
 
   /**
-   * Get next action from GPT-5.2 reasoning model
+   * Get next action from reasoning model
    */
   async getNextAction(
     screenAnalysis: ScreenAnalysis,
@@ -196,8 +198,8 @@ ${screenAnalysis.pageState}`;
       userMessage += `\n\nAnswer to your previous question:\n${visionAnswer}`;
     }
 
-    const response = await openai.chatCompletion({
-      model: "gpt-5.2",
+    const response = await reasoningClient.chatCompletion({
+      model: REASONING_MODEL,
       messages: [ChatClient.message(systemPrompt, "system"), ChatClient.message(userMessage, "user")],
       temperature: 0.1,
       response_format: {
@@ -245,19 +247,19 @@ ${screenAnalysis.pageState}`;
       },
     });
 
-    console.log("[GPT-5.2] Raw response:", JSON.stringify(response).substring(0, 1000));
+    console.log("[Reasoning] Raw response:", JSON.stringify(response).substring(0, 1000));
     const content = response.choices[0]?.message?.content;
     if (!content) {
-      console.error("[GPT-5.2] Empty response:", JSON.stringify(response));
+      console.error("[Reasoning] Empty response:", JSON.stringify(response));
       throw new Error("Empty response from reasoning model");
     }
-    console.log("[GPT-5.2] Content:", content.substring(0, 500));
+    console.log("[Reasoning] Content:", content.substring(0, 500));
 
     let parsed;
     try {
       parsed = JSON.parse(content);
     } catch {
-      console.error("[GPT-5.2] Failed to parse JSON:", content);
+      console.error("[Reasoning] Failed to parse JSON:", content);
       throw new Error(`Invalid JSON from reasoning model: ${content.substring(0, 500)}`);
     }
 

@@ -1,4 +1,4 @@
-// Screen analysis result from Isaac vision model
+// Screen analysis result from vision model
 export interface ScreenAnalysis {
   pageState: string;
   url?: string;
@@ -6,8 +6,8 @@ export interface ScreenAnalysis {
 
 export interface ClickAction {
   action: "click";
-  target: string; // Description of element to click (Isaac will find coordinates)
-  x?: number; // Resolved coordinates (filled in after Isaac lookup)
+  target: string; // Description of element to click (vision model will find coordinates)
+  x?: number; // Resolved coordinates (filled in after vision model lookup)
   y?: number;
 }
 
@@ -56,7 +56,7 @@ export type BrowserAction =
   | NavigateAction
   | DoneAction;
 
-// Decision from GPT-5.2 reasoning model
+// Decision from reasoning model
 export interface ActionDecision {
   reasoning: string;
   action: BrowserAction; // First action (for compatibility)

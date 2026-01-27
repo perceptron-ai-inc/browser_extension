@@ -2,7 +2,7 @@
   "name": "browser-automation-agent",
   "version": "1.0.0",
   "type": "module",
-  "description": "Browser automation using Isaac vision model and GPT-5.2 reasoning model",
+  "description": "Browser automation using vision and reasoning models",
   "license": "MIT",
   "scripts": {
     "build": "node build.cjs",

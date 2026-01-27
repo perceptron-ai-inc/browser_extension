@@ -362,7 +362,7 @@ async function runAutomation(tabId: number, goal: string): Promise<void> {
         broadcastStatus({
           status: "analyzing",
           iteration,
-          message: "Analyzing current page with Isaac vision model...",
+          message: "Analyzing current page...",
         });
 
         try {
@@ -423,7 +423,7 @@ async function runAutomation(tabId: number, goal: string): Promise<void> {
       broadcastStatus({
         status: "analyzing",
         iteration,
-        message: `GPT-5.2 determining next action... (URL: ${screenAnalysis.url || "unknown"})`,
+        message: `Determining next action...`,
       });
 
       console.log("[Agent] Sending to reasoning model:", {

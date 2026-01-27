@@ -1,12 +1,14 @@
 # Browser Automation Agent
 
-A Chrome extension that automates browser tasks using vision and reasoning models. It sees the screen through Isaac (vision model) and decides actions through GPT-5.2 (reasoning model).
+A Chrome extension that automates browser tasks using vision and reasoning models.
+
+Built by [Perceptron](https://perceptron.inc).
 
 ## How it Works
 
 1. **Screenshot** - Captures the visible tab
-2. **Vision Analysis** - Isaac identifies interactive elements (buttons, links, inputs)
-3. **Reasoning** - GPT-5.2 decides what action to take based on the goal and page state
+2. **Vision Analysis** - Vision model identifies interactive elements (buttons, links, inputs)
+3. **Reasoning** - Reasoning model decides what action to take based on the goal and page state
 4. **Execution** - Performs the action via Chrome DevTools Protocol (clicks, typing, scrolling)
 5. **Loop** - Repeats until the goal is achieved
 
@@ -40,10 +42,18 @@ npm run build
 3. Type what you want to automate (e.g., "Search for flights to Tokyo")
 4. Watch it work
 
-## Models
+## Configuration
 
-- **Isaac** (`isaac-0.2-2b-preview`) - Vision model for element detection and pointing
-- **GPT-5.2** - Reasoning model for action planning
+Configure via environment variables in `.env`:
+
+**Vision Model** (uses [Perceptron API](https://perceptron.inc))
+- `PERCEPTRON_API_KEY` - Get your key at [platform.perceptron.inc](https://platform.perceptron.inc)
+- `VISION_MODEL` - See [available models](https://docs.perceptron.inc/index#models)
+
+**Reasoning Model**
+- `REASONING_API_URL`
+- `REASONING_API_KEY`
+- `REASONING_MODEL`
 
 ## Development
 
