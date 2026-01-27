@@ -299,7 +299,9 @@ function broadcastStatus(update: Omit<StatusUpdate, "type">): void {
 // Main automation loop
 async function runAutomation(tabId: number, goal: string): Promise<void> {
   if (!ModelClient.hasApiKeys()) {
-    throw new Error("API keys not configured. Please set PERCEPTRON_API_KEY and REASONING_API_KEY in .env and rebuild.");
+    throw new Error(
+      "API keys not configured. Please set PERCEPTRON_API_KEY and REASONING_API_KEY in .env and rebuild.",
+    );
   }
 
   isRunning = true;

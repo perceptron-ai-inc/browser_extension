@@ -49,10 +49,12 @@ npm run build
 Configure via environment variables in `.env`:
 
 **Vision Model** (uses [Perceptron API](https://perceptron.inc))
+
 - `PERCEPTRON_API_KEY` - Get your key at [platform.perceptron.inc](https://platform.perceptron.inc)
 - `VISION_MODEL` - See [available models](https://docs.perceptron.inc/index#models)
 
 **Reasoning Model**
+
 - `REASONING_API_URL`
 - `REASONING_API_KEY`
 - `REASONING_MODEL`
