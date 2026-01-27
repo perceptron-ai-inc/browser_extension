@@ -368,7 +368,20 @@ async function runAutomation(tabId: number, goal: string): Promise<void> {
         });
 
         try {
-          const result = await client.analyzeScreenshot(screenshot, pendingVisionFocus);
+          // Clear existing boxes before streaming new ones
+          try {
+            await ensureContentScript(tabId);
+            await chrome.tabs.sendMessage(tabId, { type: "CLEAR_BOXES" });
+          } catch {
+            // Content script might not be loaded
+          }
+
+          const result = await client.analyzeScreenshot(screenshot, pendingVisionFocus, (newBoxes) => {
+            // Draw new boxes on the live page as they stream in
+            if (newBoxes.length > 0) {
+              chrome.tabs.sendMessage(tabId, { type: "ADD_BOXES", boxes: newBoxes }).catch(() => {});
+            }
+          });
 
           screenAnalysis = {
             pageState: result.pageState,
@@ -385,18 +398,6 @@ async function runAutomation(tabId: number, goal: string): Promise<void> {
             pageDescription: `URL: ${currentUrl}\n\n${result.pageState}`,
             boxes: result.boxes,
           });
-
-          // Draw boxes on the actual page
-          if (result.boxes && result.boxes.length > 0) {
-            try {
-              await chrome.tabs.sendMessage(tabId, {
-                type: "DRAW_BOXES",
-                boxes: result.boxes,
-              });
-            } catch {
-              // Content script might not be loaded
-            }
-          }
         } catch (apiError) {
           // Vision API failed but we still have the screenshot
           console.log("[Agent] Vision API failed:", apiError);
@@ -439,14 +440,6 @@ async function runAutomation(tabId: number, goal: string): Promise<void> {
       // Save question and vision focus hint for next iteration
       pendingQuestion = decision.question || undefined;
       pendingVisionFocus = decision.visionFocus;
-
-      // Send reasoning update
-      broadcastStatus({
-        status: "reasoning",
-        iteration,
-        message: "Decision made",
-        reasoning: decision.reasoning,
-      });
 
       // Get all actions (1-3) from decision
       const actions = decision.actions || [decision.action];
@@ -531,6 +524,9 @@ async function runAutomation(tabId: number, goal: string): Promise<void> {
           });
 
           actionToExecute = { ...clickAction, x: coords.x, y: coords.y };
+
+          // Flash the click target on the page
+          chrome.tabs.sendMessage(tabId, { type: "FLASH_CLICK", x: coords.x, y: coords.y }).catch(() => {});
         } else if (action.action === "type") {
           const typeAction = action as TypeAction;
           actionDesc = `Type: "${typeAction.text}"`;

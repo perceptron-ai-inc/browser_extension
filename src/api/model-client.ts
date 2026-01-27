@@ -84,32 +84,42 @@ export class ModelClient {
   }
 
   /**
-   * Analyze screenshot to identify interactive elements
+   * Analyze screenshot to identify interactive elements.
+   * Streams the response and emits content + new boxes as they arrive via onStream.
    */
   async analyzeScreenshot(
     base64Image: string,
-    visionFocus?: string,
+    visionFocus: string | undefined,
+    onStream: (newBoxes: BoundingBox[]) => void,
   ): Promise<{ pageState: string; boxes?: BoundingBox[] }> {
     const prompt = visionFocus
       ? `This is a browser page. Segment elements, focused on: ${visionFocus}`
       : "This is a browser page. Segment elements.";
 
-    const response = await visionClient.chatCompletion({
+    const options = {
       model: VISION_MODEL,
       messages: [
         ChatClient.message("<hint>BOX</hint>", "system"),
         ChatClient.message([ChatClient.imagePart(base64Image), ChatClient.textPart(prompt)]),
       ],
       temperature: 0,
-      max_completion_tokens: 2048,
       frequency_penalty: 0.6,
+    };
+
+    let content = "";
+    const allBoxes: BoundingBox[] = [];
+
+    await visionClient.streamChatCompletion(options, (delta) => {
+      content += delta;
+      const parsed = parseBoxes(content);
+      const newBoxes = parsed.slice(allBoxes.length);
+      allBoxes.push(...newBoxes);
+      onStream(newBoxes);
     });
 
-    const content = response.choices[0].message.content;
-    const boxes = parseBoxes(content);
-    console.log(`[Vision] Found ${boxes.length} boxes`);
+    console.log(`[Vision] Found ${allBoxes.length} boxes`);
 
-    return { pageState: content, boxes };
+    return { pageState: content, boxes: allBoxes };
   }
 
   /**

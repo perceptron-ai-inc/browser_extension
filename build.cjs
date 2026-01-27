@@ -43,7 +43,7 @@ if (!fs.existsSync("dist")) {
 }
 
 // Copy static files
-const staticFiles = ["manifest.json", "sidepanel.html", "sidepanel.css"];
+const staticFiles = ["manifest.json", "sidepanel.html", "sidepanel.css", "content.css"];
 staticFiles.forEach((file) => {
   fs.copyFileSync(path.join("src", file), path.join("dist", file));
 });
