@@ -1,4 +1,4 @@
-import { OpenAIClient } from "./api/openai-client.js";
+import { ModelClient } from "./api/model-client.js";
 import { ApiError } from "./api/errors.js";
 import type {
   BrowserAction,
@@ -12,7 +12,7 @@ import type {
 } from "./types.js";
 
 // Client is initialized with API keys from .env at build time
-const client = new OpenAIClient();
+const client = new ModelClient();
 let isRunning = false;
 let currentGoal: string | null = null;
 let actionHistory: ActionHistoryEntry[] = [];
@@ -298,8 +298,8 @@ function broadcastStatus(update: Omit<StatusUpdate, "type">): void {
 
 // Main automation loop
 async function runAutomation(tabId: number, goal: string): Promise<void> {
-  if (!OpenAIClient.hasApiKeys()) {
-    throw new Error("API keys not configured. Please set PERCEPTRON_API_KEY and OPENAI_API_KEY in .env and rebuild.");
+  if (!ModelClient.hasApiKeys()) {
+    throw new Error("API keys not configured. Please set PERCEPTRON_API_KEY and REASONING_API_KEY in .env and rebuild.");
   }
 
   isRunning = true;
@@ -665,7 +665,7 @@ chrome.runtime.onMessage.addListener((message: ExtensionMessage, _sender, sendRe
       break;
 
     case "CHECK_API_KEY":
-      sendResponse({ hasKey: OpenAIClient.hasApiKeys() });
+      sendResponse({ hasKey: ModelClient.hasApiKeys() });
       return true;
   }
 

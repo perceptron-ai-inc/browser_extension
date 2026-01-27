@@ -41,10 +41,10 @@ function parseBoxes(content: string): BoundingBox[] {
   return boxes;
 }
 
-export class OpenAIClient {
+export class ModelClient {
   constructor() {
-    if (!PERCEPTRON_API_KEY || !OPENAI_API_KEY) {
-      console.warn("API keys not configured. Please set PERCEPTRON_API_KEY and OPENAI_API_KEY in .env");
+    if (!PERCEPTRON_API_KEY || !REASONING_API_KEY) {
+      console.warn("API keys not configured. Please set PERCEPTRON_API_KEY and REASONING_API_KEY in .env");
     }
   }
 
@@ -276,6 +276,6 @@ ${screenAnalysis.pageState}`;
   }
 
   static hasApiKeys(): boolean {
-    return !!(PERCEPTRON_API_KEY && OPENAI_API_KEY);
+    return !!(PERCEPTRON_API_KEY && REASONING_API_KEY);
   }
 }
