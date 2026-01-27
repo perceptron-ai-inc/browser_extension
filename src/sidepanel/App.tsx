@@ -110,7 +110,7 @@ export function App() {
             ...prev,
             {
               type: "action",
-              content: `Step ${message.iteration}: ${message.message}`,
+              content: message.message,
             },
           ]);
           break;
