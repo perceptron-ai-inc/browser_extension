@@ -4,6 +4,8 @@ A Chrome extension that automates browser tasks using vision and reasoning model
 
 Built by [Perceptron](https://perceptron.inc).
 
+> **Note:** This extension is for internal/demo use only. API keys are embedded in the build and visible to anyone who inspects the extension code. Do not distribute to end users.
+
 ## How it Works
 
 1. **Screenshot** - Captures the visible tab
