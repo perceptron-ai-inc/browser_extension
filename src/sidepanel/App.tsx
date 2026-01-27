@@ -185,7 +185,7 @@ export function App() {
     <div class="container">
       <header class="header">
         <div class={`status-dot ${status !== "idle" ? status : ""}`} />
-        <span class="title">Browser Agent</span>
+        <img src="icons/logo.svg" alt="Perceptron" class="logo" />
       </header>
 
       <div class="messages" ref={messagesRef}>
