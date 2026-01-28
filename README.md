@@ -1,6 +1,6 @@
 # Browser Automation Agent
 
-https://github.com/user-attachments/assets/3a8eb3bf-007a-41aa-ba13-d42359c4d1c9
+https://github.com/user-attachments/assets/2d8f0ecc-f6ca-4fe5-bbc2-a48d0f8f41d4
 
 A Chrome extension that automates browser tasks using vision and reasoning models.
 
