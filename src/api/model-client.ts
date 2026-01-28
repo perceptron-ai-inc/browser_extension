@@ -23,21 +23,31 @@ export interface BoundingBox {
   label?: string;
 }
 
-// Parse boxes from vision model response
+// Parse boxes from vision model response, handling collection tags
 function parseBoxes(content: string): BoundingBox[] {
   const boxes: BoundingBox[] = [];
-  const boxRegex =
-    /<point_box(?:\s+mention="([^"]*)")?>\s*\((\d+)\s*,\s*(\d+)\)\s*\((\d+)\s*,\s*(\d+)\)\s*<\/point_box>/g;
 
+  // Match collection open/close tags and point_box tags in order
+  const tokenRegex =
+    /<collection\s+mention="([^"]*)"[^>]*>|<\/collection>|<point_box(?:\s+mention="([^"]*)")?>\s*\((\d+)\s*,\s*(\d+)\)\s*\((\d+)\s*,\s*(\d+)\)\s*<\/point_box>/g;
+
+  let collectionLabel: string | undefined;
   let match;
-  while ((match = boxRegex.exec(content)) !== null) {
-    boxes.push({
-      label: match[1],
-      x1: parseInt(match[2]),
-      y1: parseInt(match[3]),
-      x2: parseInt(match[4]),
-      y2: parseInt(match[5]),
-    });
+  while ((match = tokenRegex.exec(content)) !== null) {
+    if (match[0].startsWith("<collection")) {
+      collectionLabel = match[1];
+    } else if (match[0].startsWith("</collection")) {
+      collectionLabel = undefined;
+    } else {
+      // point_box: use its own mention if present, otherwise the collection label
+      boxes.push({
+        label: match[2] || collectionLabel,
+        x1: parseInt(match[3]),
+        y1: parseInt(match[4]),
+        x2: parseInt(match[5]),
+        y2: parseInt(match[6]),
+      });
+    }
   }
   return boxes;
 }
@@ -99,8 +109,8 @@ export class ModelClient {
     onStream: (newBoxes: BoundingBox[]) => void,
   ): Promise<{ pageState: string; boxes?: BoundingBox[] }> {
     const prompt = visionFocus
-      ? `Segment this browser page's ${visionFocus} elements. Label each element.`
-      : "Segment this browser page's elements. Label each element.";
+      ? `Segment this browser page's ${visionFocus} elements. Label each element with a unique name. Use a single box per element, not multiple boxes for the same thing.`
+      : "Segment this browser page's elements. Label each element with a unique name. Use a single box per element, not multiple boxes for the same thing.";
 
     const options = {
       model: VISION_MODEL,
