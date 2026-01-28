@@ -1,6 +1,7 @@
 import { ModelClient } from "./api/model-client.js";
 import { ChatClient, type ChatMessage } from "./api/chat-client.js";
 import { REASONING_SYSTEM_PROMPT } from "./api/constants.js";
+import { isInternalUrl } from "./url-utils.js";
 import { ApiError } from "./api/errors.js";
 import type {
   BrowserAction,
@@ -336,17 +337,21 @@ async function runAutomation(tabId: number, goal: string): Promise<void> {
       const tab = await chrome.tabs.get(tabId);
       const currentUrl = tab.url || "";
 
-      // Try to capture screenshot (will fail silently on restricted pages)
-      try {
-        await waitForPageReady(tabId);
-      } catch {
-        // Ignore errors
-      }
+      // Only capture and analyze screenshots on real pages
+      if (!isInternalUrl(currentUrl)) {
+        try {
+          await waitForPageReady(tabId);
+        } catch {
+          // Ignore errors
+        }
 
-      try {
-        screenshot = await captureScreenshot();
-      } catch (e) {
-        console.log("[Agent] Screenshot capture failed:", e);
+        try {
+          screenshot = await captureScreenshot();
+        } catch (e) {
+          console.log("[Agent] Screenshot capture failed:", e);
+        }
+      } else {
+        console.log("[Agent] Skipping screenshot for internal URL:", currentUrl);
       }
 
       // Step 1b: Analyze with vision model (only if we have a screenshot)

@@ -99,8 +99,8 @@ export class ModelClient {
     onStream: (newBoxes: BoundingBox[]) => void,
   ): Promise<{ pageState: string; boxes?: BoundingBox[] }> {
     const prompt = visionFocus
-      ? `This is a browser page. Segment elements, focused on: ${visionFocus}`
-      : "This is a browser page. Segment elements.";
+      ? `Segment this browser page's ${visionFocus} elements. Label each element.`
+      : "Segment this browser page's elements. Label each element.";
 
     const options = {
       model: VISION_MODEL,
@@ -110,6 +110,7 @@ export class ModelClient {
       ],
       temperature: 0,
       frequency_penalty: 0.6,
+      max_completion_tokens: 2048,
     };
 
     let content = "";
