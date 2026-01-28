@@ -1,4 +1,6 @@
 import { ModelClient } from "./api/model-client.js";
+import { ChatClient, type ChatMessage } from "./api/chat-client.js";
+import { REASONING_SYSTEM_PROMPT } from "./api/constants.js";
 import { ApiError } from "./api/errors.js";
 import type {
   BrowserAction,
@@ -16,6 +18,7 @@ const client = new ModelClient();
 let isRunning = false;
 let currentGoal: string | null = null;
 let actionHistory: ActionHistoryEntry[] = [];
+let conversationMessages: ChatMessage[] = [];
 
 // Open side panel when extension icon is clicked
 chrome.action.onClicked.addListener((tab) => {
@@ -307,6 +310,10 @@ async function runAutomation(tabId: number, goal: string): Promise<void> {
   isRunning = true;
   currentGoal = goal;
   actionHistory = [];
+  conversationMessages = [
+    ChatClient.message(REASONING_SYSTEM_PROMPT, "system"),
+    ChatClient.message(`Goal: ${goal}`, "system"),
+  ];
 
   const maxIterations = 50;
   const maxRetries = 3;
@@ -429,12 +436,24 @@ async function runAutomation(tabId: number, goal: string): Promise<void> {
         message: `Determining next action...`,
       });
 
+      // Build messages for this turn (goal is only in the first message)
+      const newMessages: ChatMessage[] = [];
+      if (screenAnalysis.url) {
+        newMessages.push(ChatClient.message(`Current URL: ${screenAnalysis.url}`, "user"));
+      }
+      newMessages.push(ChatClient.message(`Current page:\n${screenAnalysis.pageState}`, "user"));
+      if (visionAnswer) {
+        newMessages.push(ChatClient.message(`Answer to your previous question:\n${visionAnswer}`, "user"));
+      }
+
       console.log("[Agent] Sending to reasoning model:", {
         url: screenAnalysis.url,
         pageState: screenAnalysis.pageState?.substring(0, 200),
+        conversationTurns: Math.floor(conversationMessages.length / 2),
       });
 
-      const decision = await client.getNextAction(screenAnalysis, goal, actionHistory, visionAnswer);
+      const { decision, assistantMessage } = await client.getNextAction([...conversationMessages, ...newMessages]);
+      conversationMessages.push(...newMessages, ChatClient.message(assistantMessage, "assistant"));
       visionAnswer = undefined; // Clear after use
 
       // Save question and vision focus hint for next iteration
