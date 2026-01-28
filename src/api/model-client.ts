@@ -57,6 +57,12 @@ export interface NextActionResult {
   assistantMessage: string;
 }
 
+type VisionHint = "THINK" | "POINT" | "BOX";
+
+function hintMessage(...hints: VisionHint[]): ChatMessage {
+  return ChatClient.message(`<hint>${hints.join(" ")}</hint>`, "system");
+}
+
 export class ModelClient {
   constructor() {
     if (!PERCEPTRON_API_KEY || !REASONING_API_KEY) {
@@ -76,7 +82,7 @@ export class ModelClient {
     const response = await visionClient.chatCompletion({
       model: VISION_MODEL,
       messages: [
-        ChatClient.message("<hint>POINT</hint>", "system"),
+        hintMessage("POINT"),
         ChatClient.message([ChatClient.imagePart(base64Image), ChatClient.textPart(`Point to the ${description}`)]),
       ],
       temperature: 0,
@@ -109,17 +115,17 @@ export class ModelClient {
     onStream: (newBoxes: BoundingBox[]) => void,
   ): Promise<{ pageState: string; boxes?: BoundingBox[] }> {
     const prompt = visionFocus
-      ? `Segment this browser page's ${visionFocus} elements. Label each element with a unique name. Use a single box per element, not multiple boxes for the same thing.`
-      : "Segment this browser page's elements. Label each element with a unique name. Use a single box per element, not multiple boxes for the same thing.";
+      ? `Segment and label ${visionFocus}. Include buttons, links, inputs, and text. Do not segment the same element multiple times.`
+      : "Segment and label page elements. Include buttons, links, inputs, and text. Do not segment the same element multiple times.";
 
     const options = {
       model: VISION_MODEL,
       messages: [
-        ChatClient.message("<hint>BOX</hint>", "system"),
+        hintMessage("BOX"),
         ChatClient.message([ChatClient.imagePart(base64Image), ChatClient.textPart(prompt)]),
       ],
       temperature: 0,
-      frequency_penalty: 0.6,
+      frequency_penalty: 0.5,
       max_completion_tokens: 2048,
     };
 
@@ -146,6 +152,7 @@ export class ModelClient {
     const response = await visionClient.chatCompletion({
       model: VISION_MODEL,
       messages: [
+        hintMessage("THINK"),
         ChatClient.message([
           ChatClient.imagePart(base64Image),
           ChatClient.textPart(
@@ -154,7 +161,6 @@ export class ModelClient {
         ]),
       ],
       temperature: 0,
-      max_completion_tokens: 256,
     });
 
     return response.choices[0].message.content;

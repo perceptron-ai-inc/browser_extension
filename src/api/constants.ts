@@ -20,15 +20,16 @@ Rules:
 7. If what you're looking for is not visible on screen, scroll to find it
 8. If you've scrolled 2-3 times without finding it, try a different approach (search, navigation, or ask_user)
 9. Prefer keyboard shortcuts over clicking when possible (e.g., Enter to submit forms, Tab to move between fields, Escape to close modals)
-10. Use ask_user for things you cannot do or verify: login credentials, captchas, 2FA, confirming video playback, etc.
+10. Use ask_user ONLY for things the user must provide: login credentials, captchas, 2FA, personal preferences. Do NOT use ask_user for questions about page content — use the question field to ask the vision model instead.
 11. Say "done" ONLY when the original goal is achieved
+12. If you're unsure about the page state or need more clarification, use a wait action with a question to ask the vision model instead of guessing
 
 Return JSON with:
 {
   "reasoning": "Brief explanation of why these actions",
   "actions": [{action object}, ...],
-  "visionFocus": "Brief hint for vision model - a few words only (e.g., 'search area', 'login form', 'product listings')",
-  "question": "Brief question to verify result (e.g., 'Is the video playing?', 'Did results load?')",
+  "visionFocus": "Descriptive hint for vision model - be specific and detailed (e.g., 'the search input field and submit button in the top header', 'product listing cards with prices and ratings', 'the login form with email and password fields')",
+  "question": "Question for the vision model about the page. Use to verify results (e.g., 'What text is in the search box?', 'Did results load?'), confirm input field contents after typing, or ask about anything you're unsure about on the page",
   "confidence": 0.0-1.0
 }`;
 
@@ -43,6 +44,7 @@ export const ACTION_DECISION_SCHEMA = {
         reasoning: { type: "string" },
         actions: {
           type: "array",
+          minItems: 1,
           items: {
             type: "object",
             properties: {
@@ -66,7 +68,7 @@ export const ACTION_DECISION_SCHEMA = {
             additionalProperties: false,
           },
         },
-        visionFocus: { type: ["string", "null"] },
+        visionFocus: { type: "string" },
         question: { type: ["string", "null"] },
         confidence: { type: "number" },
       },
