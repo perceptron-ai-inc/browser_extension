@@ -1,7 +1,7 @@
 // Screen analysis result from vision model
 export interface ScreenAnalysis {
-  pageState: string;
-  url?: string;
+  pageState?: string;
+  url: string;
 }
 
 export interface ClickAction {

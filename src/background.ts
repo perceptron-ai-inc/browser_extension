@@ -331,11 +331,11 @@ async function runAutomation(tabId: number, goal: string): Promise<void> {
     try {
       // Step 1: Try to capture and analyze screenshot
       let screenshot: string | null = null;
-      let screenAnalysis: ScreenAnalysis;
 
       // Get current tab URL
       const tab = await chrome.tabs.get(tabId);
-      const currentUrl = tab.url || "";
+      const currentUrl = tab.url!;
+      const screenAnalysis: ScreenAnalysis = { url: currentUrl };
 
       // Only capture and analyze screenshots on real pages
       if (!isInternalUrl(currentUrl)) {
@@ -356,50 +356,52 @@ async function runAutomation(tabId: number, goal: string): Promise<void> {
 
       // Step 1b: Analyze with vision model (only if we have a screenshot)
       if (screenshot) {
-        // First, answer any pending question from the reasoning model
-        if (pendingQuestion) {
-          broadcastStatus({
-            status: "analyzing",
-            iteration,
-            message: `Answering: ${pendingQuestion}`,
-          });
-
-          try {
-            visionAnswer = await client.askQuestion(screenshot, pendingQuestion);
-            console.log(`[Agent] Vision answer: ${visionAnswer}`);
-          } catch (error) {
-            console.log("[Agent] Question answering failed:", error);
-          }
-          pendingQuestion = undefined;
-        }
-
         broadcastStatus({
           status: "analyzing",
           iteration,
           message: "Analyzing current page...",
         });
 
+        // Clear existing boxes before streaming new ones
         try {
-          // Clear existing boxes before streaming new ones
-          try {
-            await ensureContentScript(tabId);
-            await chrome.tabs.sendMessage(tabId, { type: "CLEAR_BOXES" });
-          } catch {
-            // Content script might not be loaded
-          }
+          await ensureContentScript(tabId);
+          await chrome.tabs.sendMessage(tabId, { type: "CLEAR_BOXES" });
+        } catch {
+          // Content script might not be loaded
+        }
 
-          const result = await client.analyzeScreenshot(screenshot, pendingVisionFocus, (newBoxes) => {
+        // Run question answering and screenshot analysis in parallel
+        const questionPromise = pendingQuestion
+          ? client.askQuestion(screenshot, pendingQuestion).catch((error) => {
+              console.warn("[Agent] Question answering failed:", error);
+              return undefined;
+            })
+          : Promise.resolve(undefined);
+
+        const analysisPromise = client
+          .analyzeScreenshot(screenshot, pendingVisionFocus, (newBoxes) => {
             // Draw new boxes on the live page as they stream in
             if (newBoxes.length > 0) {
-              chrome.tabs.sendMessage(tabId, { type: "ADD_BOXES", boxes: newBoxes }).catch(() => {});
+              chrome.tabs.sendMessage(tabId, { type: "ADD_BOXES", boxes: newBoxes }).catch((e) => {
+                console.warn("[Agent] Failed to add boxes:", e);
+              });
             }
+          })
+          .catch((apiError) => {
+            console.warn("[Agent] Vision API failed:", apiError);
+            return null;
           });
 
-          screenAnalysis = {
-            pageState: result.pageState,
-            url: currentUrl,
-          };
+        const [questionResult, analysisResult] = await Promise.all([questionPromise, analysisPromise]);
 
+        visionAnswer = questionResult;
+        if (visionAnswer) {
+          console.log(`[Agent] Vision answer: ${visionAnswer}`);
+        }
+        pendingQuestion = undefined;
+
+        if (analysisResult) {
+          screenAnalysis.pageState = analysisResult.pageState;
           pendingVisionFocus = undefined;
 
           broadcastStatus({
@@ -407,16 +409,9 @@ async function runAutomation(tabId: number, goal: string): Promise<void> {
             iteration,
             message: "Page analyzed",
             screenshot,
-            pageDescription: `URL: ${currentUrl}\n\n${result.pageState}`,
-            boxes: result.boxes,
+            pageDescription: analysisResult.pageState,
+            boxes: analysisResult.boxes,
           });
-        } catch (apiError) {
-          // Vision API failed but we still have the screenshot
-          console.log("[Agent] Vision API failed:", apiError);
-          screenAnalysis = {
-            pageState: `Page at ${currentUrl}. Vision analysis failed - proceeding with screenshot only.`,
-            url: currentUrl,
-          };
         }
       } else {
         // No screenshot - blank page or restricted URL
@@ -426,12 +421,7 @@ async function runAutomation(tabId: number, goal: string): Promise<void> {
           message: "No page loaded - determining where to navigate...",
         });
 
-        screenAnalysis = {
-          pageState: currentUrl
-            ? `Cannot capture page (${currentUrl}). Navigate to a regular website to continue.`
-            : "Blank page or new tab. Navigate to a website first.",
-          url: currentUrl,
-        };
+        screenAnalysis.pageState = `Cannot capture page (${currentUrl}). Navigate to a regular website to continue.`;
       }
 
       // Step 2: Get next action from reasoning model
@@ -443,10 +433,10 @@ async function runAutomation(tabId: number, goal: string): Promise<void> {
 
       // Build messages for this turn (goal is only in the first message)
       const newMessages: ChatMessage[] = [];
-      if (screenAnalysis.url) {
-        newMessages.push(ChatClient.message(`Current URL: ${screenAnalysis.url}`, "user"));
+      newMessages.push(ChatClient.message(`Current URL: ${screenAnalysis.url}`, "user"));
+      if (screenAnalysis.pageState) {
+        newMessages.push(ChatClient.message(`Current page:\n${screenAnalysis.pageState}`, "user"));
       }
-      newMessages.push(ChatClient.message(`Current page:\n${screenAnalysis.pageState}`, "user"));
       if (visionAnswer) {
         newMessages.push(ChatClient.message(`Answer to your previous question:\n${visionAnswer}`, "user"));
       }
