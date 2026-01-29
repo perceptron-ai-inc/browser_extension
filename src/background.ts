@@ -497,80 +497,94 @@ async function runAutomation(tabId: number, goal: string): Promise<void> {
         // Content script might not be loaded
       }
 
-      for (let i = 0; i < actions.length; i++) {
+      actionLoop: for (let i = 0; i < actions.length; i++) {
         if (!isRunning) break;
 
         const action = actions[i];
-        let actionToExecute = action;
+        let actionToExecute: BrowserAction = action;
         let actionDesc = action.action;
 
-        // Handle done action mid-sequence
-        if (action.action === "done") {
-          broadcastStatus({
-            status: "completed",
-            iteration,
-            message: (action as { result: string }).result,
-            reasoning: decision.reasoning,
-          });
-          isRunning = false;
-          break;
-        }
+        actionSwitch: switch (action.action) {
+          case "done":
+            broadcastStatus({
+              status: "completed",
+              iteration,
+              message: (action as { result: string }).result,
+              reasoning: decision.reasoning,
+            });
+            isRunning = false;
+            break actionLoop;
 
-        if (action.action === "click") {
-          const clickAction = action as ClickAction;
-          if (!clickAction.target) {
-            throw new Error("Click action missing target");
+          case "ask_user":
+            broadcastStatus({
+              status: "waiting_for_user",
+              iteration,
+              message: action.prompt,
+            });
+            isRunning = false;
+            break actionLoop;
+
+          case "click": {
+            const clickAction = action as ClickAction;
+            if (!clickAction.target) {
+              throw new Error("Click action missing target");
+            }
+            actionDesc = `Click: ${clickAction.target}`;
+
+            if (!screenshot || !viewport) {
+              throw new Error(
+                `Cannot click: screenshot=${!!screenshot}, viewport=${!!viewport}. Navigate to a website first.`,
+              );
+            }
+
+            broadcastStatus({
+              status: "analyzing",
+              iteration,
+              message: `Finding element: ${clickAction.target}`,
+            });
+
+            const coords = await client.findElement(screenshot, clickAction.target, viewport.width, viewport.height);
+            console.log(`[Agent] Click coords: (${coords.x}, ${coords.y})`);
+
+            broadcastStatus({
+              status: "pointing",
+              iteration,
+              message: clickAction.target,
+              screenshot,
+              pointX: (coords.x / viewport.width) * 100,
+              pointY: (coords.y / viewport.height) * 100,
+            });
+
+            actionToExecute = { ...clickAction, x: coords.x, y: coords.y };
+
+            // Flash the click target on the page
+            chrome.tabs.sendMessage(tabId, { type: "FLASH_CLICK", x: coords.x, y: coords.y }).catch(() => {});
+            break actionSwitch;
           }
-          actionDesc = `Click: ${clickAction.target}`;
 
-          if (!screenshot || !viewport) {
-            throw new Error(
-              `Cannot click: screenshot=${!!screenshot}, viewport=${!!viewport}. Navigate to a website first.`,
-            );
+          case "type": {
+            const typeAction = action as TypeAction;
+            actionDesc = `Type: "${typeAction.text}"`;
+            break actionSwitch;
           }
 
-          broadcastStatus({
-            status: "analyzing",
-            iteration,
-            message: `Finding element: ${clickAction.target}`,
-          });
+          case "press": {
+            const pressAction = action as PressAction;
+            actionDesc = `Press: ${pressAction.key}`;
+            break actionSwitch;
+          }
 
-          const coords = await client.findElement(screenshot, clickAction.target, viewport.width, viewport.height);
-          console.log(`[Agent] Click coords: (${coords.x}, ${coords.y})`);
+          case "scroll":
+            actionDesc = `Scroll ${action.direction}`;
+            break actionSwitch;
 
-          broadcastStatus({
-            status: "pointing",
-            iteration,
-            message: clickAction.target,
-            screenshot,
-            pointX: (coords.x / viewport.width) * 100,
-            pointY: (coords.y / viewport.height) * 100,
-          });
+          case "navigate":
+            actionDesc = `Navigate to ${action.url}`;
+            break actionSwitch;
 
-          actionToExecute = { ...clickAction, x: coords.x, y: coords.y };
-
-          // Flash the click target on the page
-          chrome.tabs.sendMessage(tabId, { type: "FLASH_CLICK", x: coords.x, y: coords.y }).catch(() => {});
-        } else if (action.action === "type") {
-          const typeAction = action as TypeAction;
-          actionDesc = `Type: "${typeAction.text}"`;
-        } else if (action.action === "press") {
-          const pressAction = action as PressAction;
-          actionDesc = `Press: ${pressAction.key}`;
-        } else if (action.action === "scroll") {
-          actionDesc = `Scroll ${action.direction}`;
-        } else if (action.action === "navigate") {
-          actionDesc = `Navigate to ${action.url}`;
-        } else if (action.action === "ask_user") {
-          // Pause and ask the user
-          broadcastStatus({
-            status: "waiting_for_user",
-            iteration,
-            message: action.prompt,
-          });
-          // Stop the loop - user will resume or provide input
-          isRunning = false;
-          break;
+          case "wait":
+            actionDesc = `Wait ${action.duration}ms`;
+            break actionSwitch;
         }
 
         broadcastStatus({

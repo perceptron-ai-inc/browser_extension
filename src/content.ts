@@ -68,31 +68,28 @@ function flashClick(x: number, y: number) {
 
 // Listen for messages from background
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  if (message.type === "PING") {
-    sendResponse({ ok: true });
-    return false;
-  }
-  if (message.type === "GET_VIEWPORT") {
-    sendResponse({
-      width: window.innerWidth,
-      height: window.innerHeight,
-    });
-    return false;
-  }
-  if (message.type === "ADD_BOXES") {
-    addBoxes(message.boxes || []);
-    sendResponse({ ok: true });
-    return false;
-  }
-  if (message.type === "FLASH_CLICK") {
-    flashClick(message.x, message.y);
-    sendResponse({ ok: true });
-    return false;
-  }
-  if (message.type === "CLEAR_BOXES") {
-    clearBoxes();
-    sendResponse({ ok: true });
-    return false;
+  switch (message.type) {
+    case "PING":
+      sendResponse({ ok: true });
+      break;
+    case "GET_VIEWPORT":
+      sendResponse({
+        width: window.innerWidth,
+        height: window.innerHeight,
+      });
+      break;
+    case "ADD_BOXES":
+      addBoxes(message.boxes || []);
+      sendResponse({ ok: true });
+      break;
+    case "FLASH_CLICK":
+      flashClick(message.x, message.y);
+      sendResponse({ ok: true });
+      break;
+    case "CLEAR_BOXES":
+      clearBoxes();
+      sendResponse({ ok: true });
+      break;
   }
   return false;
 });
