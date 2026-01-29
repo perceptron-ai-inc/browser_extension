@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "Browser Agent",
+  "name": "Perceptron Agent",
   "version": "1.0.0",
   "description": "Automates browser actions using vision and reasoning models",
   "permissions": ["activeTab", "scripting", "tabs", "sidePanel", "debugger"],
@@ -9,7 +9,7 @@
     "default_path": "sidepanel.html"
   },
   "action": {
-    "default_title": "Open Browser Agent"
+    "default_title": "Open Perceptron Agent"
   },
   "background": {
     "service_worker": "background.js",

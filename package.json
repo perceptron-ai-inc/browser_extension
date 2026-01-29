@@ -1,8 +1,8 @@
 {
-  "name": "browser-automation-agent",
+  "name": "perceptron-agent",
   "version": "1.0.0",
   "type": "module",
-  "description": "Browser automation using vision and reasoning models",
+  "description": "Perceptron Agent - browser automation using vision and reasoning models",
   "license": "MIT",
   "scripts": {
     "build": "node build.cjs",
