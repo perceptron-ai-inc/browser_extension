@@ -16,6 +16,13 @@ import type {
   ScreenAnalysis,
 } from "./types.js";
 
+const MAX_ITERATIONS = 50;
+const MAX_RETRIES = 3;
+const ITERATION_DELAY_MS = 500;
+const ACTION_DELAY_MS = 300;
+const NAVIGATION_DELAY_MS = 2000;
+const RETRY_DELAY_MS = 1000;
+
 // Client is initialized with API keys from .env at build time
 const client = new ModelClient();
 let isRunning = false;
@@ -29,6 +36,29 @@ chrome.action.onClicked.addListener((tab) => {
     chrome.sidePanel.open({ windowId: tab.windowId });
   }
 });
+
+function getActionDescription(action: BrowserAction): string {
+  switch (action.action) {
+    case "click":
+      return `Click: ${(action as ClickAction).target}`;
+    case "type":
+      return `Type: "${(action as TypeAction).text}"`;
+    case "press":
+      return `Press: ${(action as PressAction).key}`;
+    case "scroll":
+      return `Scroll ${action.direction}`;
+    case "navigate":
+      return `Navigate to ${action.url}`;
+    case "wait":
+      return `Wait ${action.duration}ms`;
+    case "done":
+      return "Done";
+    case "ask_user":
+      return "Waiting for user";
+    default:
+      return action.action;
+  }
+}
 
 // Broadcast status update to popup
 function broadcastStatus(update: Omit<StatusUpdate, "type">): void {
@@ -58,15 +88,13 @@ async function runAutomation(tabId: number, goal: string): Promise<void> {
     ChatClient.message(`Goal: ${goal}`, "system"),
   ];
 
-  const maxIterations = 50;
-  const maxRetries = 3;
   let iteration = 0;
   let retryCount = 0;
   let pendingQuestion: string | undefined;
   let pendingVisionFocus: string | undefined;
   let visionAnswer: string | undefined;
 
-  while (isRunning && iteration < maxIterations) {
+  while (isRunning && iteration < MAX_ITERATIONS) {
     iteration++;
     console.log(`[Agent] Starting iteration ${iteration}`);
 
@@ -197,17 +225,6 @@ async function runAutomation(tabId: number, goal: string): Promise<void> {
       // Get all actions (1-3) from decision
       const actions = decision.actions || [decision.action];
 
-      // Check if first action is done
-      if (actions[0].action === "done") {
-        broadcastStatus({
-          status: "completed",
-          iteration,
-          message: (actions[0] as { result: string }).result,
-          reasoning: decision.reasoning,
-        });
-        break;
-      }
-
       // Step 3: Execute all actions in sequence
       // Only get viewport if we have a screenshot (not on chrome:// pages)
       let viewport: { width: number; height: number } | null = null;
@@ -229,9 +246,8 @@ async function runAutomation(tabId: number, goal: string): Promise<void> {
 
         const action = actions[i];
         let actionToExecute: BrowserAction = action;
-        let actionDesc = action.action;
 
-        actionSwitch: switch (action.action) {
+        switch (action.action) {
           case "done":
             broadcastStatus({
               status: "completed",
@@ -256,7 +272,6 @@ async function runAutomation(tabId: number, goal: string): Promise<void> {
             if (!clickAction.target) {
               throw new Error("Click action missing target");
             }
-            actionDesc = `Click: ${clickAction.target}`;
 
             if (!screenshot || !viewport) {
               throw new Error(
@@ -284,42 +299,17 @@ async function runAutomation(tabId: number, goal: string): Promise<void> {
 
             actionToExecute = { ...clickAction, x: coords.x, y: coords.y };
 
-            // Flash the click target on the page
             sendToContentScript(tabId, { type: "FLASH_CLICK", x: coords.x, y: coords.y }).catch((e) => {
               console.warn("[Agent] Failed to flash click:", e);
             });
-            break actionSwitch;
+            break;
           }
-
-          case "type": {
-            const typeAction = action as TypeAction;
-            actionDesc = `Type: "${typeAction.text}"`;
-            break actionSwitch;
-          }
-
-          case "press": {
-            const pressAction = action as PressAction;
-            actionDesc = `Press: ${pressAction.key}`;
-            break actionSwitch;
-          }
-
-          case "scroll":
-            actionDesc = `Scroll ${action.direction}`;
-            break actionSwitch;
-
-          case "navigate":
-            actionDesc = `Navigate to ${action.url}`;
-            break actionSwitch;
-
-          case "wait":
-            actionDesc = `Wait ${action.duration}ms`;
-            break actionSwitch;
         }
 
         broadcastStatus({
           status: "executing",
           iteration,
-          message: `Executing: ${actionDesc}`,
+          message: `Executing: ${getActionDescription(action)}`,
           action: actionToExecute,
           reasoning: i === 0 ? decision.reasoning : undefined,
           confidence: decision.confidence,
@@ -332,7 +322,7 @@ async function runAutomation(tabId: number, goal: string): Promise<void> {
             console.log("[Agent] Blocked navigation to unsafe URL:", url);
           } else {
             await chrome.tabs.update(tabId, { url });
-            await new Promise((resolve) => setTimeout(resolve, 2000));
+            await new Promise((resolve) => setTimeout(resolve, NAVIGATION_DELAY_MS));
           }
         } else {
           await executeAction(tabId, actionToExecute);
@@ -347,19 +337,19 @@ async function runAutomation(tabId: number, goal: string): Promise<void> {
 
         // Brief pause between actions in sequence
         if (i < actions.length - 1) {
-          await new Promise((resolve) => setTimeout(resolve, 300));
+          await new Promise((resolve) => setTimeout(resolve, ACTION_DELAY_MS));
         }
       }
 
       // Pause before next iteration (screenshot + analysis)
       retryCount = 0;
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      await new Promise((resolve) => setTimeout(resolve, ITERATION_DELAY_MS));
     } catch (error) {
       retryCount++;
       const errorMessage = error instanceof Error ? error.message : "Unknown error";
       const isRetriable = error instanceof ApiError && error.isRetriable;
 
-      if (!isRetriable || retryCount >= maxRetries) {
+      if (!isRetriable || retryCount >= MAX_RETRIES) {
         broadcastStatus({
           status: "error",
           iteration,
@@ -368,17 +358,17 @@ async function runAutomation(tabId: number, goal: string): Promise<void> {
         break;
       }
 
-      console.warn(`[Agent] Retrying (${retryCount}/${maxRetries}): ${errorMessage}`);
+      console.warn(`[Agent] Retrying (${retryCount}/${MAX_RETRIES}): ${errorMessage}`);
 
       if (actionHistory.length > 0) {
         actionHistory[actionHistory.length - 1].success = false;
       }
 
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
     }
   }
 
-  if (iteration >= maxIterations) {
+  if (iteration >= MAX_ITERATIONS) {
     broadcastStatus({
       status: "stopped",
       iteration,
