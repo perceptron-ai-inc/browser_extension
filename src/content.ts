@@ -2,6 +2,8 @@
  * Content script - provides viewport info and draws box overlays
  */
 
+import decodeHtml from "decode-html";
+
 // Container for box overlays
 let boxContainer: HTMLDivElement | null = null;
 
@@ -40,7 +42,7 @@ function createBoxElement(
   if (box.label) {
     const label = document.createElement("span");
     label.className = "agent-box-label";
-    label.textContent = box.label;
+    label.textContent = decodeHtml(box.label);
     div.appendChild(label);
   }
 
