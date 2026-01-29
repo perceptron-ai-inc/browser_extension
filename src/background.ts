@@ -3,6 +3,8 @@ import { ChatClient, type ChatMessage } from "./api/chat-client.js";
 import { REASONING_SYSTEM_PROMPT } from "./api/constants.js";
 import { isInternalUrl } from "./url-utils.js";
 import { ApiError } from "./api/errors.js";
+import { executeAction, waitForPageReady } from "./cdp.js";
+import { captureScreenshot, getViewportDimensions, sendToContentScript } from "./tab-utils.js";
 import type {
   BrowserAction,
   ClickAction,
@@ -28,192 +30,6 @@ chrome.action.onClicked.addListener((tab) => {
   }
 });
 
-// Capture screenshot of current tab
-async function captureScreenshot(): Promise<string> {
-  const dataUrl = await chrome.tabs.captureVisibleTab({
-    format: "jpeg",
-    quality: 85,
-  });
-  return dataUrl.replace(/^data:image\/jpeg;base64,/, "");
-}
-
-// Ensure content script is injected
-async function ensureContentScript(tabId: number): Promise<void> {
-  try {
-    await chrome.tabs.sendMessage(tabId, { type: "PING" });
-  } catch {
-    // Content script not loaded, inject it
-    await chrome.scripting.executeScript({
-      target: { tabId },
-      files: ["content.js"],
-    });
-  }
-}
-
-async function getViewportDimensions(tabId: number): Promise<{ width: number; height: number }> {
-  await ensureContentScript(tabId);
-  return chrome.tabs.sendMessage(tabId, { type: "GET_VIEWPORT" });
-}
-
-// Debugger management
-const attachedTabs = new Set<number>();
-
-async function ensureDebugger(tabId: number): Promise<void> {
-  if (!attachedTabs.has(tabId)) {
-    try {
-      await chrome.debugger.attach({ tabId }, "1.3");
-      attachedTabs.add(tabId);
-    } catch {
-      // Can't attach to chrome:// or other restricted pages
-      throw new Error("Cannot interact with this page. Please navigate to a website first.");
-    }
-  }
-}
-
-// Click using CDP - matches Playwright's page.mouse.click()
-async function cdpClick(tabId: number, x: number, y: number): Promise<void> {
-  await ensureDebugger(tabId);
-
-  await chrome.debugger.sendCommand({ tabId }, "Input.dispatchMouseEvent", {
-    type: "mousePressed",
-    x,
-    y,
-    button: "left",
-    clickCount: 1,
-  });
-
-  await chrome.debugger.sendCommand({ tabId }, "Input.dispatchMouseEvent", {
-    type: "mouseReleased",
-    x,
-    y,
-    button: "left",
-    clickCount: 1,
-  });
-}
-
-// Type using CDP - matches Playwright's page.keyboard.type() with 50ms delay
-async function cdpType(tabId: number, text: string): Promise<void> {
-  await ensureDebugger(tabId);
-
-  for (const char of text) {
-    await chrome.debugger.sendCommand({ tabId }, "Input.dispatchKeyEvent", {
-      type: "char",
-      text: char,
-    });
-    // 50ms delay between keystrokes like desktop_use
-    await new Promise((resolve) => setTimeout(resolve, 50));
-  }
-}
-
-// Key definitions for supported keys
-const KEY_DEFINITIONS: Record<string, { keyCode: number; code: string; text?: string }> = {
-  Enter: { keyCode: 13, code: "Enter", text: "\r" },
-  Escape: { keyCode: 27, code: "Escape" },
-  ArrowUp: { keyCode: 38, code: "ArrowUp" },
-  ArrowDown: { keyCode: 40, code: "ArrowDown" },
-};
-
-// Press a key
-async function cdpPress(tabId: number, key: string): Promise<void> {
-  await ensureDebugger(tabId);
-
-  const keyDef = KEY_DEFINITIONS[key];
-  if (!keyDef) {
-    throw new Error(`Unsupported key: ${key}`);
-  }
-
-  await chrome.debugger.sendCommand({ tabId }, "Input.dispatchKeyEvent", {
-    type: "keyDown",
-    key,
-    code: keyDef.code,
-    windowsVirtualKeyCode: keyDef.keyCode,
-    nativeVirtualKeyCode: keyDef.keyCode,
-    text: keyDef.text,
-  });
-
-  await chrome.debugger.sendCommand({ tabId }, "Input.dispatchKeyEvent", {
-    type: "keyUp",
-    key,
-    code: keyDef.code,
-    windowsVirtualKeyCode: keyDef.keyCode,
-    nativeVirtualKeyCode: keyDef.keyCode,
-  });
-}
-
-// Scroll using CDP - matches Playwright's page.mouse.wheel()
-// Uses delta of 500 like desktop_use
-async function cdpScroll(tabId: number, direction: string): Promise<void> {
-  await ensureDebugger(tabId);
-
-  const delta = 500; // Same as desktop_use
-  const deltaX = direction === "left" ? -delta : direction === "right" ? delta : 0;
-  const deltaY = direction === "up" ? -delta : direction === "down" ? delta : 0;
-
-  await chrome.debugger.sendCommand({ tabId }, "Input.dispatchMouseEvent", {
-    type: "mouseWheel",
-    x: 400,
-    y: 300,
-    deltaX,
-    deltaY,
-  });
-}
-
-// Clean up debugger on tab close
-chrome.tabs.onRemoved.addListener((tabId) => {
-  attachedTabs.delete(tabId);
-});
-
-// Wait for page to be ready (document.readyState === 'complete')
-async function waitForPageReady(tabId: number, timeout = 5000): Promise<void> {
-  try {
-    await ensureDebugger(tabId);
-  } catch {
-    return; // Can't attach debugger, skip waiting
-  }
-
-  const startTime = Date.now();
-
-  while (Date.now() - startTime < timeout) {
-    try {
-      const result = (await chrome.debugger.sendCommand({ tabId }, "Runtime.evaluate", {
-        expression: "document.readyState",
-      })) as { result: { value: string } };
-
-      if (result?.result?.value === "complete") {
-        await new Promise((resolve) => setTimeout(resolve, 200));
-        return;
-      }
-    } catch {
-      return; // Debugger error, stop waiting
-    }
-
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-}
-
-// Execute action via CDP
-async function executeAction(tabId: number, action: BrowserAction): Promise<void> {
-  switch (action.action) {
-    case "click":
-      if (action.x !== undefined && action.y !== undefined) {
-        await cdpClick(tabId, action.x, action.y);
-      }
-      break;
-    case "type":
-      await cdpType(tabId, action.text);
-      break;
-    case "press":
-      await cdpPress(tabId, action.key);
-      break;
-    case "scroll":
-      await cdpScroll(tabId, action.direction);
-      break;
-    case "wait":
-      await new Promise((resolve) => setTimeout(resolve, action.duration));
-      break;
-  }
-}
-
 // Broadcast status update to popup
 function broadcastStatus(update: Omit<StatusUpdate, "type">): void {
   chrome.runtime
@@ -221,8 +37,8 @@ function broadcastStatus(update: Omit<StatusUpdate, "type">): void {
       type: "STATUS_UPDATE",
       ...update,
     } as StatusUpdate)
-    .catch(() => {
-      // Popup might be closed, ignore error
+    .catch((e) => {
+      console.warn("[Agent] Failed to broadcast status:", e);
     });
 }
 
@@ -267,8 +83,8 @@ async function runAutomation(tabId: number, goal: string): Promise<void> {
       if (!isInternalUrl(currentUrl)) {
         try {
           await waitForPageReady(tabId);
-        } catch {
-          // Ignore errors
+        } catch (e) {
+          console.warn("[Agent] waitForPageReady failed:", e);
         }
 
         try {
@@ -289,12 +105,9 @@ async function runAutomation(tabId: number, goal: string): Promise<void> {
         });
 
         // Clear existing boxes before streaming new ones
-        try {
-          await ensureContentScript(tabId);
-          await chrome.tabs.sendMessage(tabId, { type: "CLEAR_BOXES" });
-        } catch {
-          // Content script might not be loaded
-        }
+        await sendToContentScript(tabId, { type: "CLEAR_BOXES" }).catch((e) => {
+          console.warn("[Agent] Failed to clear boxes:", e);
+        });
 
         // Run question answering and screenshot analysis in parallel
         const questionPromise = pendingQuestion
@@ -308,7 +121,7 @@ async function runAutomation(tabId: number, goal: string): Promise<void> {
           .analyzeScreenshot(screenshot, pendingVisionFocus, (newBoxes) => {
             // Draw new boxes on the live page as they stream in
             if (newBoxes.length > 0) {
-              chrome.tabs.sendMessage(tabId, { type: "ADD_BOXES", boxes: newBoxes }).catch((e) => {
+              sendToContentScript(tabId, { type: "ADD_BOXES", boxes: newBoxes }).catch((e) => {
                 console.warn("[Agent] Failed to add boxes:", e);
               });
             }
@@ -401,17 +214,15 @@ async function runAutomation(tabId: number, goal: string): Promise<void> {
       if (screenshot) {
         try {
           viewport = await getViewportDimensions(tabId);
-        } catch {
-          // Can't get viewport (restricted page), proceed without it
+        } catch (e) {
+          console.warn("[Agent] Failed to get viewport:", e);
         }
       }
 
       // Clear boxes before executing actions
-      try {
-        await chrome.tabs.sendMessage(tabId, { type: "CLEAR_BOXES" });
-      } catch {
-        // Content script might not be loaded
-      }
+      await sendToContentScript(tabId, { type: "CLEAR_BOXES" }).catch((e) => {
+        console.warn("[Agent] Failed to clear boxes:", e);
+      });
 
       actionLoop: for (let i = 0; i < actions.length; i++) {
         if (!isRunning) break;
@@ -474,7 +285,9 @@ async function runAutomation(tabId: number, goal: string): Promise<void> {
             actionToExecute = { ...clickAction, x: coords.x, y: coords.y };
 
             // Flash the click target on the page
-            chrome.tabs.sendMessage(tabId, { type: "FLASH_CLICK", x: coords.x, y: coords.y }).catch(() => {});
+            sendToContentScript(tabId, { type: "FLASH_CLICK", x: coords.x, y: coords.y }).catch((e) => {
+              console.warn("[Agent] Failed to flash click:", e);
+            });
             break actionSwitch;
           }
 
