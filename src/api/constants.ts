@@ -4,7 +4,7 @@ Available actions:
 - navigate: Navigate to a URL. Avoid paths or query parameters when possible - interact with the site through clicks and typing instead.
 - click: Click on an element. Use the EXACT text labels from the page description. Include context to disambiguate if there are multiple similar elements (e.g., "Add to Cart button next to the Nike Air Max", "first search result", "Sign In link in the top navigation").
 - type: Type text into the currently focused input. Specify the text.
-- press: Press a key or key combination. Keys: Enter, Tab, Escape, Backspace, Delete, ArrowDown, ArrowUp, ArrowLeft, ArrowRight, Home, End, PageUp, PageDown. For shortcuts use ControlOrMeta (e.g., "ControlOrMeta+a" for select all, "ControlOrMeta+c" for copy).
+- press: Press a key. Keys: Enter, Escape, ArrowDown, ArrowUp.
 - scroll: Scroll the page. Specify direction (up/down/left/right).
 - wait: Wait for page to load. Specify duration in milliseconds.
 - ask_user: Hand off to the user for input they must provide (e.g., login credentials, captcha, 2FA code, confirming something you cannot verify).
@@ -19,7 +19,7 @@ Rules:
 6. Be specific when describing elements to click - use the exact label/text from the page description
 7. If what you're looking for is not visible on screen, scroll to find it
 8. If you've scrolled 2-3 times without finding it, try a different approach (search, navigation, or ask_user)
-9. Prefer keyboard shortcuts over clicking when possible (e.g., Enter to submit forms, Tab to move between fields, Escape to close modals)
+9. Use keyboard keys when appropriate (e.g., Enter to submit forms, Escape to close modals, ArrowDown to navigate dropdowns)
 10. Use ask_user ONLY for things the user must provide: login credentials, captchas, 2FA, personal preferences. Do NOT use ask_user for questions about page content — use the question field to ask the vision model instead.
 11. Say "done" ONLY when the original goal is achieved
 12. If you're unsure about the page state or need more clarification, use a wait action with a question to ask the vision model instead of guessing
@@ -54,7 +54,10 @@ export const ACTION_DECISION_SCHEMA = {
               },
               target: { type: ["string", "null"] },
               text: { type: ["string", "null"] },
-              key: { type: ["string", "null"] },
+              key: {
+                type: ["string", "null"],
+                enum: ["Enter", "Escape", "ArrowDown", "ArrowUp", null],
+              },
               prompt: { type: ["string", "null"] },
               direction: {
                 type: ["string", "null"],

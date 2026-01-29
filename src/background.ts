@@ -105,113 +105,39 @@ async function cdpType(tabId: number, text: string): Promise<void> {
   }
 }
 
-// Key definitions matching Playwright's usKeyboardLayout
+// Key definitions for supported keys
 const KEY_DEFINITIONS: Record<string, { keyCode: number; code: string; text?: string }> = {
   Enter: { keyCode: 13, code: "Enter", text: "\r" },
-  Tab: { keyCode: 9, code: "Tab" },
   Escape: { keyCode: 27, code: "Escape" },
-  Backspace: { keyCode: 8, code: "Backspace" },
-  Delete: { keyCode: 46, code: "Delete" },
   ArrowUp: { keyCode: 38, code: "ArrowUp" },
   ArrowDown: { keyCode: 40, code: "ArrowDown" },
-  ArrowLeft: { keyCode: 37, code: "ArrowLeft" },
-  ArrowRight: { keyCode: 39, code: "ArrowRight" },
-  Home: { keyCode: 36, code: "Home" },
-  End: { keyCode: 35, code: "End" },
-  PageUp: { keyCode: 33, code: "PageUp" },
-  PageDown: { keyCode: 34, code: "PageDown" },
-  Space: { keyCode: 32, code: "Space", text: " " },
-  Control: { keyCode: 17, code: "ControlLeft" },
-  Shift: { keyCode: 16, code: "ShiftLeft" },
-  Alt: { keyCode: 18, code: "AltLeft" },
-  Meta: { keyCode: 91, code: "MetaLeft" },
 };
 
-// Modifier key to bit flag mapping
-const MODIFIER_FLAGS: Record<string, number> = {
-  Alt: 1,
-  Control: 2,
-  Meta: 4,
-  Shift: 8,
-};
-
-// Press a key or key combination - matches Playwright's page.keyboard.press()
+// Press a key
 async function cdpPress(tabId: number, key: string): Promise<void> {
   await ensureDebugger(tabId);
 
-  // Handle ControlOrMeta - resolve to Meta on Mac, Control elsewhere
-  const isMac = navigator.platform?.toLowerCase().includes("mac");
-  const resolvedKey = key.replace(/ControlOrMeta/g, isMac ? "Meta" : "Control");
-
-  // Handle key combinations like "Control+a"
-  const parts = resolvedKey.split("+");
-  const modifiers = parts.slice(0, -1);
-  const mainKey = parts[parts.length - 1];
-
-  // Calculate modifier flags
-  let modifierFlags = 0;
-  for (const mod of modifiers) {
-    modifierFlags |= MODIFIER_FLAGS[mod] || 0;
+  const keyDef = KEY_DEFINITIONS[key];
+  if (!keyDef) {
+    throw new Error(`Unsupported key: ${key}`);
   }
 
-  // Get key definition
-  const keyDef = KEY_DEFINITIONS[mainKey] || {
-    keyCode: mainKey.toUpperCase().charCodeAt(0),
-    code: `Key${mainKey.toUpperCase()}`,
-    text: mainKey.length === 1 ? mainKey : undefined,
-  };
-
-  // Press modifiers down
-  for (const mod of modifiers) {
-    const modDef = KEY_DEFINITIONS[mod];
-    if (modDef) {
-      await chrome.debugger.sendCommand({ tabId }, "Input.dispatchKeyEvent", {
-        type: "keyDown",
-        key: mod,
-        code: modDef.code,
-        windowsVirtualKeyCode: modDef.keyCode,
-        nativeVirtualKeyCode: modDef.keyCode,
-        modifiers: modifierFlags,
-      });
-    }
-  }
-
-  // Press the main key
   await chrome.debugger.sendCommand({ tabId }, "Input.dispatchKeyEvent", {
     type: "keyDown",
-    key: mainKey,
+    key,
     code: keyDef.code,
     windowsVirtualKeyCode: keyDef.keyCode,
     nativeVirtualKeyCode: keyDef.keyCode,
     text: keyDef.text,
-    modifiers: modifierFlags,
   });
 
   await chrome.debugger.sendCommand({ tabId }, "Input.dispatchKeyEvent", {
     type: "keyUp",
-    key: mainKey,
+    key,
     code: keyDef.code,
     windowsVirtualKeyCode: keyDef.keyCode,
     nativeVirtualKeyCode: keyDef.keyCode,
-    modifiers: modifierFlags,
   });
-
-  // Release modifiers in reverse order
-  for (let i = modifiers.length - 1; i >= 0; i--) {
-    const mod = modifiers[i];
-    const modDef = KEY_DEFINITIONS[mod];
-    if (modDef) {
-      modifierFlags &= ~(MODIFIER_FLAGS[mod] || 0);
-      await chrome.debugger.sendCommand({ tabId }, "Input.dispatchKeyEvent", {
-        type: "keyUp",
-        key: mod,
-        code: modDef.code,
-        windowsVirtualKeyCode: modDef.keyCode,
-        nativeVirtualKeyCode: modDef.keyCode,
-        modifiers: modifierFlags,
-      });
-    }
-  }
 }
 
 // Scroll using CDP - matches Playwright's page.mouse.wheel()
