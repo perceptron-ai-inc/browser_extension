@@ -3,9 +3,9 @@ import { ChatClient, type ChatMessage } from "./api/chat-client.js";
 import { REASONING_SYSTEM_PROMPT } from "./api/constants.js";
 import { isInternalUrl } from "./url-utils.js";
 import { ApiError } from "./api/errors.js";
-import { executeAction, waitForPageReady } from "./cdp.js";
-import { captureScreenshot, getViewportDimensions, sendToContentScript } from "./tab-utils.js";
-import { getChatHistory, addToChatHistory } from "./chat-history.js";
+import { executeAction, waitForPageReady, captureScreenshot } from "./cdp.js";
+import { getViewportDimensions, sendToContentScript } from "./tab-utils.js";
+import { getChatHistory, addToChatHistory, clearChatHistory } from "./chat-history.js";
 import type {
   BrowserAction,
   ClickAction,
@@ -26,11 +26,34 @@ const RETRY_DELAY_MS = 1000;
 
 // Client is initialized with API keys from .env at build time
 const client = new ModelClient();
-let isRunning = false;
-let currentTabId: number | null = null;
-let currentGoal: string | null = null;
-let actionHistory: ActionHistoryEntry[] = [];
-let conversationMessages: ChatMessage[] = [];
+
+// Per-tab automation state
+interface TabState {
+  isRunning: boolean;
+  goal: string | null;
+  actionHistory: ActionHistoryEntry[];
+  conversationMessages: ChatMessage[];
+}
+
+const tabStates = new Map<number, TabState>();
+
+function getTabState(tabId: number): TabState {
+  if (!tabStates.has(tabId)) {
+    tabStates.set(tabId, {
+      isRunning: false,
+      goal: null,
+      actionHistory: [],
+      conversationMessages: [],
+    });
+  }
+  return tabStates.get(tabId)!;
+}
+
+// Clean up when tab is closed
+chrome.tabs.onRemoved.addListener((tabId) => {
+  tabStates.delete(tabId);
+  clearChatHistory(tabId);
+});
 
 const CHAT_HISTORY_MAP: Record<string, "action" | "assistant"> = {
   executing: "action",
@@ -73,7 +96,7 @@ function broadcastStatus(tabId: number, update: Omit<StatusUpdate, "type">): voi
   // Add to chat history based on status
   const type = CHAT_HISTORY_MAP[update.status];
   if (type && update.message) {
-    addToChatHistory({ type, content: update.message });
+    addToChatHistory(tabId, { type, content: update.message });
   }
 
   // Send to content script in the tab
@@ -90,11 +113,11 @@ async function runAutomation(tabId: number, goal: string): Promise<void> {
     );
   }
 
-  isRunning = true;
-  currentTabId = tabId;
-  currentGoal = goal;
-  actionHistory = [];
-  conversationMessages = [
+  const state = getTabState(tabId);
+  state.isRunning = true;
+  state.goal = goal;
+  state.actionHistory = [];
+  state.conversationMessages = [
     ChatClient.message(REASONING_SYSTEM_PROMPT, "system"),
     ChatClient.message(`Goal: ${goal}`, "system"),
   ];
@@ -105,7 +128,7 @@ async function runAutomation(tabId: number, goal: string): Promise<void> {
   let pendingVisionFocus: string | undefined;
   let visionAnswer: string | undefined;
 
-  while (isRunning && iteration < MAX_ITERATIONS) {
+  while (state.isRunning && iteration < MAX_ITERATIONS) {
     iteration++;
     console.log(`[Agent] Starting iteration ${iteration}`);
 
@@ -222,11 +245,14 @@ async function runAutomation(tabId: number, goal: string): Promise<void> {
       console.log("[Agent] Sending to reasoning model:", {
         url: screenAnalysis.url,
         pageState: screenAnalysis.pageState?.substring(0, 200),
-        conversationTurns: Math.floor(conversationMessages.length / 2),
+        conversationTurns: Math.floor(state.conversationMessages.length / 2),
       });
 
-      const { decision, assistantMessage } = await client.getNextAction([...conversationMessages, ...newMessages]);
-      conversationMessages.push(...newMessages, ChatClient.message(assistantMessage, "assistant"));
+      const { decision, assistantMessage } = await client.getNextAction([
+        ...state.conversationMessages,
+        ...newMessages,
+      ]);
+      state.conversationMessages.push(...newMessages, ChatClient.message(assistantMessage, "assistant"));
       visionAnswer = undefined; // Clear after use
 
       // Save question and vision focus hint for next iteration
@@ -253,7 +279,7 @@ async function runAutomation(tabId: number, goal: string): Promise<void> {
       });
 
       actionLoop: for (let i = 0; i < actions.length; i++) {
-        if (!isRunning) break;
+        if (!state.isRunning) break;
 
         const action = actions[i];
         let actionToExecute: BrowserAction = action;
@@ -266,7 +292,7 @@ async function runAutomation(tabId: number, goal: string): Promise<void> {
               message: (action as { result: string }).result,
               reasoning: decision.reasoning,
             });
-            isRunning = false;
+            state.isRunning = false;
             break actionLoop;
 
           case "ask_user":
@@ -275,7 +301,7 @@ async function runAutomation(tabId: number, goal: string): Promise<void> {
               iteration,
               message: action.prompt,
             });
-            isRunning = false;
+            state.isRunning = false;
             break actionLoop;
 
           case "click": {
@@ -339,7 +365,7 @@ async function runAutomation(tabId: number, goal: string): Promise<void> {
           await executeAction(tabId, actionToExecute);
         }
 
-        actionHistory.push({
+        state.actionHistory.push({
           action,
           reasoning: decision.reasoning,
           timestamp: Date.now(),
@@ -371,8 +397,8 @@ async function runAutomation(tabId: number, goal: string): Promise<void> {
 
       console.warn(`[Agent] Retrying (${retryCount}/${MAX_RETRIES}): ${errorMessage}`);
 
-      if (actionHistory.length > 0) {
-        actionHistory[actionHistory.length - 1].success = false;
+      if (state.actionHistory.length > 0) {
+        state.actionHistory[state.actionHistory.length - 1].success = false;
       }
 
       await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
@@ -388,37 +414,36 @@ async function runAutomation(tabId: number, goal: string): Promise<void> {
     });
   }
 
-  isRunning = false;
-  currentGoal = null;
+  state.isRunning = false;
+  state.goal = null;
 }
 
 // Message handler
-chrome.runtime.onMessage.addListener((message: ExtensionMessage, _sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((message: ExtensionMessage, sender, sendResponse) => {
+  const tabId = sender.tab?.id;
+
   switch (message.type) {
     case "RUN":
-      addToChatHistory({ type: "user", content: message.goal });
-      chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
-        const tab = tabs[0];
-        if (tab?.id) {
-          try {
-            await runAutomation(tab.id, message.goal);
-            sendResponse({ success: true });
-          } catch (error) {
-            const msg = error instanceof Error ? error.message : "Unknown error";
-            sendResponse({ success: false, error: msg });
-          }
-        } else {
-          sendResponse({ success: false, error: "No active tab found" });
-        }
-      });
+      if (!tabId) {
+        sendResponse({ success: false, error: "No tab ID found" });
+        return true;
+      }
+      addToChatHistory(tabId, { type: "user", content: message.goal });
+      runAutomation(tabId, message.goal)
+        .then(() => sendResponse({ success: true }))
+        .catch((error) => {
+          const msg = error instanceof Error ? error.message : "Unknown error";
+          sendResponse({ success: false, error: msg });
+        });
       return true;
 
     case "STOP":
-      isRunning = false;
-      if (currentTabId) {
-        broadcastStatus(currentTabId, {
+      if (tabId) {
+        const state = getTabState(tabId);
+        state.isRunning = false;
+        broadcastStatus(tabId, {
           status: "stopped",
-          iteration: actionHistory.length,
+          iteration: state.actionHistory.length,
           message: "Stopped by user",
         });
       }
@@ -426,17 +451,27 @@ chrome.runtime.onMessage.addListener((message: ExtensionMessage, _sender, sendRe
       break;
 
     case "GET_STATUS":
-      sendResponse({
-        isRunning,
-        currentGoal,
-        actionCount: actionHistory.length,
-      });
+      if (tabId) {
+        const state = getTabState(tabId);
+        sendResponse({
+          isRunning: state.isRunning,
+          currentGoal: state.goal,
+          actionCount: state.actionHistory.length,
+        });
+      } else {
+        sendResponse({ isRunning: false, currentGoal: null, actionCount: 0 });
+      }
       break;
 
     case "GET_CHAT_HISTORY":
-      getChatHistory().then((chatHistory) => {
-        sendResponse({ chatHistory, isRunning, currentGoal });
-      });
+      if (tabId) {
+        const state = getTabState(tabId);
+        getChatHistory(tabId).then((chatHistory) => {
+          sendResponse({ chatHistory, isRunning: state.isRunning, currentGoal: state.goal });
+        });
+      } else {
+        sendResponse({ chatHistory: [], isRunning: false, currentGoal: null });
+      }
       return true; // async response
 
     case "CHECK_API_KEY":

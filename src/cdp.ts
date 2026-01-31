@@ -150,6 +150,30 @@ export async function waitForPageReady(tabId: number, timeout = 5000): Promise<v
   }
 }
 
+export async function captureScreenshot(tabId: number): Promise<string> {
+  // Hide overlay before capturing
+  await chrome.tabs.sendMessage(tabId, { type: "HIDE_OVERLAY" }).catch((e) => {
+    console.warn("[Screenshot] Failed to hide overlay:", e);
+  });
+
+  // Small delay to ensure overlay is hidden
+  await new Promise((resolve) => setTimeout(resolve, 50));
+
+  await ensureDebugger(tabId);
+
+  const result = (await chrome.debugger.sendCommand({ tabId }, "Page.captureScreenshot", {
+    format: "jpeg",
+    quality: 85,
+  })) as { data: string };
+
+  // Show overlay again
+  await chrome.tabs.sendMessage(tabId, { type: "SHOW_OVERLAY" }).catch((e) => {
+    console.warn("[Screenshot] Failed to show overlay:", e);
+  });
+
+  return result.data;
+}
+
 export async function executeAction(tabId: number, action: BrowserAction): Promise<void> {
   switch (action.action) {
     case "click":
