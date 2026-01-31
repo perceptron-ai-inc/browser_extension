@@ -2,11 +2,25 @@
  * Tab and content script utilities
  */
 
-export async function captureScreenshot(): Promise<string> {
+export async function captureScreenshot(tabId: number): Promise<string> {
+  // Hide overlay before capturing
+  await chrome.tabs.sendMessage(tabId, { type: "HIDE_OVERLAY" }).catch((e) => {
+    console.warn("[Screenshot] Failed to hide overlay:", e);
+  });
+
+  // Small delay to ensure overlay is hidden
+  await new Promise((resolve) => setTimeout(resolve, 50));
+
   const dataUrl = await chrome.tabs.captureVisibleTab({
     format: "jpeg",
     quality: 85,
   });
+
+  // Show overlay again
+  await chrome.tabs.sendMessage(tabId, { type: "SHOW_OVERLAY" }).catch((e) => {
+    console.warn("[Screenshot] Failed to show overlay:", e);
+  });
+
   return dataUrl.replace(/^data:image\/jpeg;base64,/, "");
 }
 

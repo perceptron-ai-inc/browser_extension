@@ -43,9 +43,11 @@ if (!fs.existsSync("dist")) {
 }
 
 // Copy static files
-const staticFiles = ["manifest.json", "sidepanel.html", "sidepanel.css", "content.css"];
+const staticFiles = ["manifest.json", "content.css", "newtab.html", "overlay/overlay.css"];
 staticFiles.forEach((file) => {
-  fs.copyFileSync(path.join("src", file), path.join("dist", file));
+  const srcPath = path.join("src", file);
+  const destFile = file === "overlay/overlay.css" ? "overlay.css" : file;
+  fs.copyFileSync(srcPath, path.join("dist", destFile));
 });
 
 // Copy icons directory
@@ -92,15 +94,23 @@ const contentBuild = esbuild.build({
   format: "iife",
 });
 
-// Build side panel script
-const sidepanelBuild = esbuild.build({
+// Build overlay script (chat UI injected into page)
+const overlayBuild = esbuild.build({
   ...commonOptions,
-  entryPoints: ["src/sidepanel/index.tsx"],
-  outfile: "dist/sidepanel.js",
+  entryPoints: ["src/overlay/index.tsx"],
+  outfile: "dist/overlay.js",
   format: "iife",
 });
 
-Promise.all([backgroundBuild, contentBuild, sidepanelBuild])
+// Build newtab script
+const newtabBuild = esbuild.build({
+  ...commonOptions,
+  entryPoints: ["src/newtab/index.tsx"],
+  outfile: "dist/newtab.js",
+  format: "iife",
+});
+
+Promise.all([backgroundBuild, contentBuild, overlayBuild, newtabBuild])
   .then(() => {
     console.log("Build completed successfully!");
     if (isWatch) {

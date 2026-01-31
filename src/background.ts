@@ -5,6 +5,7 @@ import { isInternalUrl } from "./url-utils.js";
 import { ApiError } from "./api/errors.js";
 import { executeAction, waitForPageReady } from "./cdp.js";
 import { captureScreenshot, getViewportDimensions, sendToContentScript } from "./tab-utils.js";
+import { getChatHistory, addToChatHistory } from "./chat-history.js";
 import type {
   BrowserAction,
   ClickAction,
@@ -26,16 +27,18 @@ const RETRY_DELAY_MS = 1000;
 // Client is initialized with API keys from .env at build time
 const client = new ModelClient();
 let isRunning = false;
+let currentTabId: number | null = null;
 let currentGoal: string | null = null;
 let actionHistory: ActionHistoryEntry[] = [];
 let conversationMessages: ChatMessage[] = [];
 
-// Open side panel when extension icon is clicked
-chrome.action.onClicked.addListener((tab) => {
-  if (tab.windowId) {
-    chrome.sidePanel.open({ windowId: tab.windowId });
-  }
-});
+const CHAT_HISTORY_MAP: Record<string, "action" | "assistant"> = {
+  executing: "action",
+  completed: "assistant",
+  error: "assistant",
+  stopped: "assistant",
+  waiting_for_user: "assistant",
+};
 
 function getActionDescription(action: BrowserAction): string {
   switch (action.action) {
@@ -60,16 +63,23 @@ function getActionDescription(action: BrowserAction): string {
   }
 }
 
-// Broadcast status update to popup
-function broadcastStatus(update: Omit<StatusUpdate, "type">): void {
-  chrome.runtime
-    .sendMessage({
-      type: "STATUS_UPDATE",
-      ...update,
-    } as StatusUpdate)
-    .catch((e) => {
-      console.warn("[Agent] Failed to broadcast status:", e);
-    });
+// Broadcast status update to content script overlay
+function broadcastStatus(tabId: number, update: Omit<StatusUpdate, "type">): void {
+  const message = {
+    type: "STATUS_UPDATE",
+    ...update,
+  } as StatusUpdate;
+
+  // Add to chat history based on status
+  const type = CHAT_HISTORY_MAP[update.status];
+  if (type && update.message) {
+    addToChatHistory({ type, content: update.message });
+  }
+
+  // Send to content script in the tab
+  chrome.tabs.sendMessage(tabId, message).catch((e) => {
+    console.warn("[Agent] Failed to send status to content script:", e);
+  });
 }
 
 // Main automation loop
@@ -81,6 +91,7 @@ async function runAutomation(tabId: number, goal: string): Promise<void> {
   }
 
   isRunning = true;
+  currentTabId = tabId;
   currentGoal = goal;
   actionHistory = [];
   conversationMessages = [
@@ -116,7 +127,7 @@ async function runAutomation(tabId: number, goal: string): Promise<void> {
         }
 
         try {
-          screenshot = await captureScreenshot();
+          screenshot = await captureScreenshot(tabId);
         } catch (e) {
           console.log("[Agent] Screenshot capture failed:", e);
         }
@@ -126,7 +137,7 @@ async function runAutomation(tabId: number, goal: string): Promise<void> {
 
       // Step 1b: Analyze with vision model (only if we have a screenshot)
       if (screenshot) {
-        broadcastStatus({
+        broadcastStatus(tabId, {
           status: "analyzing",
           iteration,
           message: "Analyzing current page...",
@@ -171,7 +182,7 @@ async function runAutomation(tabId: number, goal: string): Promise<void> {
           screenAnalysis.pageState = analysisResult.pageState;
           pendingVisionFocus = undefined;
 
-          broadcastStatus({
+          broadcastStatus(tabId, {
             status: "vision",
             iteration,
             message: "Page analyzed",
@@ -182,7 +193,7 @@ async function runAutomation(tabId: number, goal: string): Promise<void> {
         }
       } else {
         // No screenshot - blank page or restricted URL
-        broadcastStatus({
+        broadcastStatus(tabId, {
           status: "reasoning",
           iteration,
           message: "No page loaded - determining where to navigate...",
@@ -192,7 +203,7 @@ async function runAutomation(tabId: number, goal: string): Promise<void> {
       }
 
       // Step 2: Get next action from reasoning model
-      broadcastStatus({
+      broadcastStatus(tabId, {
         status: "analyzing",
         iteration,
         message: `Determining next action...`,
@@ -249,7 +260,7 @@ async function runAutomation(tabId: number, goal: string): Promise<void> {
 
         switch (action.action) {
           case "done":
-            broadcastStatus({
+            broadcastStatus(tabId, {
               status: "completed",
               iteration,
               message: (action as { result: string }).result,
@@ -259,7 +270,7 @@ async function runAutomation(tabId: number, goal: string): Promise<void> {
             break actionLoop;
 
           case "ask_user":
-            broadcastStatus({
+            broadcastStatus(tabId, {
               status: "waiting_for_user",
               iteration,
               message: action.prompt,
@@ -279,7 +290,7 @@ async function runAutomation(tabId: number, goal: string): Promise<void> {
               );
             }
 
-            broadcastStatus({
+            broadcastStatus(tabId, {
               status: "analyzing",
               iteration,
               message: `Finding element: ${clickAction.target}`,
@@ -288,7 +299,7 @@ async function runAutomation(tabId: number, goal: string): Promise<void> {
             const coords = await client.findElement(screenshot, clickAction.target, viewport.width, viewport.height);
             console.log(`[Agent] Click coords: (${coords.x}, ${coords.y})`);
 
-            broadcastStatus({
+            broadcastStatus(tabId, {
               status: "pointing",
               iteration,
               message: clickAction.target,
@@ -306,7 +317,7 @@ async function runAutomation(tabId: number, goal: string): Promise<void> {
           }
         }
 
-        broadcastStatus({
+        broadcastStatus(tabId, {
           status: "executing",
           iteration,
           message: `Executing: ${getActionDescription(action)}`,
@@ -350,7 +361,7 @@ async function runAutomation(tabId: number, goal: string): Promise<void> {
       const isRetriable = error instanceof ApiError && error.isRetriable;
 
       if (!isRetriable || retryCount >= MAX_RETRIES) {
-        broadcastStatus({
+        broadcastStatus(tabId, {
           status: "error",
           iteration,
           message: errorMessage,
@@ -369,7 +380,7 @@ async function runAutomation(tabId: number, goal: string): Promise<void> {
   }
 
   if (iteration >= MAX_ITERATIONS) {
-    broadcastStatus({
+    broadcastStatus(tabId, {
       status: "stopped",
       iteration,
       message:
@@ -385,6 +396,7 @@ async function runAutomation(tabId: number, goal: string): Promise<void> {
 chrome.runtime.onMessage.addListener((message: ExtensionMessage, _sender, sendResponse) => {
   switch (message.type) {
     case "RUN":
+      addToChatHistory({ type: "user", content: message.goal });
       chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
         const tab = tabs[0];
         if (tab?.id) {
@@ -403,11 +415,13 @@ chrome.runtime.onMessage.addListener((message: ExtensionMessage, _sender, sendRe
 
     case "STOP":
       isRunning = false;
-      broadcastStatus({
-        status: "stopped",
-        iteration: actionHistory.length,
-        message: "Stopped by user",
-      });
+      if (currentTabId) {
+        broadcastStatus(currentTabId, {
+          status: "stopped",
+          iteration: actionHistory.length,
+          message: "Stopped by user",
+        });
+      }
       sendResponse({ success: true });
       break;
 
@@ -418,6 +432,12 @@ chrome.runtime.onMessage.addListener((message: ExtensionMessage, _sender, sendRe
         actionCount: actionHistory.length,
       });
       break;
+
+    case "GET_CHAT_HISTORY":
+      getChatHistory().then((chatHistory) => {
+        sendResponse({ chatHistory, isRunning, currentGoal });
+      });
+      return true; // async response
 
     case "CHECK_API_KEY":
       sendResponse({ hasKey: ModelClient.hasApiKeys() });
