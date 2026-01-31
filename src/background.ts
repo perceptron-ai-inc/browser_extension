@@ -346,7 +346,7 @@ async function runAutomation(tabId: number, goal: string): Promise<void> {
         broadcastStatus(tabId, {
           status: "executing",
           iteration,
-          message: `Executing: ${getActionDescription(action)}`,
+          message: getActionDescription(action),
           action: actionToExecute,
           reasoning: i === 0 ? decision.reasoning : undefined,
           confidence: decision.confidence,
