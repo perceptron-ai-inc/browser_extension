@@ -1,4 +1,4 @@
 import { render } from "preact";
 import { ChatOverlay } from "../overlay/ChatOverlay";
 
-render(<ChatOverlay defaultOpen />, document.getElementById("root")!);
+render(<ChatOverlay defaultOpen draggable={false} />, document.getElementById("root")!);

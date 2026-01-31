@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "preact/hooks";
+import { useState, useEffect, useRef, useCallback } from "preact/hooks";
 import type { StatusUpdate } from "../types";
 
 type Status = "idle" | "active" | "error";
@@ -10,21 +10,100 @@ type MessageType =
 
 interface ChatOverlayProps {
   defaultOpen?: boolean;
+  draggable?: boolean;
 }
 
 // Full Perceptron logo with icon and text
 const PerceptronLogo = () => <img class="agent-logo" src={chrome.runtime.getURL("icons/logo.svg")} alt="Perceptron" />;
 
-export function ChatOverlay({ defaultOpen = false }: ChatOverlayProps) {
+export function ChatOverlay({ defaultOpen = false, draggable = true }: ChatOverlayProps) {
   const [isOpen, setIsOpen] = useState(defaultOpen);
   const [messages, setMessages] = useState<MessageType[]>([]);
   const [input, setInput] = useState("");
   const [status, setStatus] = useState<Status>("idle");
   const [indicator, setIndicator] = useState<string | null>(null);
+  const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const dragOffset = useRef({ x: 0, y: 0 });
+  const sidebarRef = useRef<HTMLDivElement>(null);
   const isRunning = status === "active";
 
   const messagesRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Clamp position to viewport
+  const clampPosition = useCallback((x: number, y: number) => {
+    const rect = sidebarRef.current?.getBoundingClientRect();
+    if (!rect) return { x, y };
+    return {
+      x: Math.max(0, Math.min(window.innerWidth - rect.width, x)),
+      y: Math.max(0, Math.min(window.innerHeight - rect.height, y)),
+    };
+  }, []);
+
+  // Load position from storage on mount (only when draggable)
+  useEffect(() => {
+    if (!draggable) return;
+    chrome.storage.session.get("panelPosition").then((result) => {
+      if (result.panelPosition) {
+        setPosition(clampPosition(result.panelPosition.x, result.panelPosition.y));
+      }
+    });
+  }, [draggable, clampPosition]);
+
+  // Keep position in bounds on window resize
+  useEffect(() => {
+    if (!draggable || !position) return;
+    const handleResize = () => {
+      setPosition((pos) => (pos ? clampPosition(pos.x, pos.y) : null));
+    };
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, [draggable, position, clampPosition]);
+
+  // Save position to storage when it changes (after drag ends)
+  useEffect(() => {
+    if (!draggable || !position || isDragging) return;
+    chrome.storage.session.set({ panelPosition: position });
+  }, [position, isDragging, draggable]);
+
+  // Drag handlers
+  const handleMouseDown = useCallback(
+    (e: MouseEvent) => {
+      const rect = sidebarRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      setIsDragging(true);
+      dragOffset.current = {
+        x: e.clientX - rect.left,
+        y: e.clientY - rect.top,
+      };
+      // Set position from current CSS position on first drag
+      if (!position) {
+        setPosition({ x: rect.left, y: rect.top });
+      }
+      e.preventDefault();
+    },
+    [position],
+  );
+
+  useEffect(() => {
+    if (!isDragging) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      setPosition(clampPosition(e.clientX - dragOffset.current.x, e.clientY - dragOffset.current.y));
+    };
+
+    const handleMouseUp = () => {
+      setIsDragging(false);
+    };
+
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [isDragging, clampPosition]);
 
   // Load chat history on mount
   useEffect(() => {
@@ -137,13 +216,20 @@ export function ChatOverlay({ defaultOpen = false }: ChatOverlayProps) {
     );
   }
 
+  const positionStyle = position
+    ? { left: `${position.x}px`, top: `${position.y}px`, right: "auto", bottom: "auto" }
+    : undefined;
+
   return (
-    <div class="agent-sidebar">
-      <div class="agent-sidebar-header">
+    <div ref={sidebarRef} class="agent-sidebar" style={positionStyle}>
+      <div
+        class={`agent-sidebar-header ${draggable ? "agent-sidebar-header-draggable" : ""}`}
+        onMouseDown={draggable ? handleMouseDown : undefined}
+      >
         <span class="agent-sidebar-title">
           <PerceptronLogo />
         </span>
-        <button class="agent-sidebar-close" onClick={() => setIsOpen(false)}>
+        <button class="agent-sidebar-close" onClick={() => setIsOpen(false)} onMouseDown={(e) => e.stopPropagation()}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M9 18l6-6-6-6" />
           </svg>
