@@ -23,7 +23,7 @@ async function ensureDebugger(tabId: number): Promise<void> {
   }
 }
 
-export async function click(tabId: number, x: number, y: number): Promise<void> {
+async function click(tabId: number, x: number, y: number): Promise<void> {
   await ensureDebugger(tabId);
 
   await chrome.debugger.sendCommand({ tabId }, "Input.dispatchMouseEvent", {
@@ -43,7 +43,7 @@ export async function click(tabId: number, x: number, y: number): Promise<void> 
   });
 }
 
-export async function type(tabId: number, text: string): Promise<void> {
+async function type(tabId: number, text: string): Promise<void> {
   await ensureDebugger(tabId);
 
   for (const char of text) {
@@ -63,7 +63,7 @@ const KEY_DEFINITIONS: Record<string, { keyCode: number; code: string; text?: st
   ArrowDown: { keyCode: 40, code: "ArrowDown" },
 };
 
-export async function press(tabId: number, key: string): Promise<void> {
+async function press(tabId: number, key: string): Promise<void> {
   await ensureDebugger(tabId);
 
   const keyDef = KEY_DEFINITIONS[key];
@@ -89,7 +89,7 @@ export async function press(tabId: number, key: string): Promise<void> {
   });
 }
 
-export async function scroll(tabId: number, direction: string): Promise<void> {
+async function scroll(tabId: number, direction: string): Promise<void> {
   await ensureDebugger(tabId);
 
   const delta = 500;
@@ -196,9 +196,6 @@ export async function executeAction(tabId: number, action: BrowserAction): Promi
       break;
     case "scroll":
       await withHiddenOverlay(tabId, () => scroll(tabId, action.direction));
-      break;
-    case "wait":
-      await new Promise((resolve) => setTimeout(resolve, action.duration));
       break;
   }
 }

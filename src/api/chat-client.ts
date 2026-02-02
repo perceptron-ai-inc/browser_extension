@@ -4,9 +4,20 @@
 
 import { ApiError } from "./errors.js";
 
+export interface ToolCall {
+  id: string;
+  type: "function";
+  function: {
+    name: string;
+    arguments: string;
+  };
+}
+
 export interface ChatMessage {
-  role: "system" | "user" | "assistant";
-  content: string | ChatContentPart[];
+  role: "system" | "user" | "assistant" | "tool";
+  content: string | ChatContentPart[] | null;
+  tool_calls?: ToolCall[];
+  tool_call_id?: string;
 }
 
 export interface ChatContentPart {
@@ -23,13 +34,18 @@ export interface ChatCompletionOptions {
   frequency_penalty?: number;
   response_format?: object;
   stream?: boolean;
+  tools?: object[];
+  tool_choice?: "auto" | "none" | { type: "function"; function: { name: string } };
 }
 
 export interface ChatCompletionResponse {
   choices: Array<{
     message: {
-      content: string;
+      role: "assistant";
+      content: string | null;
+      tool_calls?: ToolCall[];
     };
+    finish_reason: "stop" | "tool_calls" | "length";
   }>;
 }
 

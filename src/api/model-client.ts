@@ -1,6 +1,4 @@
-import type { ActionDecision } from "../types.js";
-import { ChatClient, type ChatMessage } from "./chat-client.js";
-import { ACTION_DECISION_SCHEMA } from "./constants.js";
+import { ChatClient, type ChatMessage, type ChatCompletionResponse } from "./chat-client.js";
 
 // Configuration injected at build time from .env
 const PERCEPTRON_API_KEY = process.env.PERCEPTRON_API_KEY;
@@ -52,11 +50,6 @@ function parseBoxes(content: string): BoundingBox[] {
   return boxes;
 }
 
-export interface NextActionResult {
-  decision: ActionDecision;
-  assistantMessage: string;
-}
-
 type VisionHint = "THINK" | "POINT" | "BOX";
 
 function hintMessage(...hints: VisionHint[]): ChatMessage {
@@ -106,18 +99,14 @@ export class ModelClient {
   }
 
   /**
-   * Analyze screenshot to identify interactive elements.
+   * Analyze screenshot using a custom prompt.
    * Streams the response and emits content + new boxes as they arrive via onStream.
    */
   async analyzeScreenshot(
     base64Image: string,
-    visionFocus: string | undefined,
+    prompt: string,
     onStream: (newBoxes: BoundingBox[]) => void,
   ): Promise<{ pageState: string; boxes?: BoundingBox[] }> {
-    const prompt = visionFocus
-      ? `Segment and label ${visionFocus}. Include buttons, links, inputs, and text. Do not segment the same element multiple times.`
-      : "Segment and label page elements. Include buttons, links, inputs, and text. Do not segment the same element multiple times.";
-
     const options = {
       model: VISION_MODEL,
       messages: [
@@ -125,7 +114,6 @@ export class ModelClient {
         ChatClient.message([ChatClient.imagePart(base64Image), ChatClient.textPart(prompt)]),
       ],
       temperature: 0,
-      frequency_penalty: 0.5,
       max_completion_tokens: 2048,
     };
 
@@ -167,45 +155,19 @@ export class ModelClient {
   }
 
   /**
-   * Get next action from reasoning model using multi-turn conversation
+   * Chat with reasoning model using tool calling
    */
-  async getNextAction(messages: ChatMessage[]): Promise<NextActionResult> {
+  async chatWithTools(messages: ChatMessage[], tools: object[]): Promise<ChatCompletionResponse> {
     const response = await reasoningClient.chatCompletion({
       model: REASONING_MODEL,
       messages,
+      tools,
+      tool_choice: "auto",
       temperature: 0.1,
-      response_format: ACTION_DECISION_SCHEMA,
     });
 
-    console.log("[Reasoning] Raw response:", JSON.stringify(response).substring(0, 1000));
-    const content = response.choices[0]?.message?.content;
-    if (!content) {
-      console.error("[Reasoning] Empty response:", JSON.stringify(response));
-      throw new Error("Empty response from reasoning model");
-    }
-    console.log("[Reasoning] Content:", content.substring(0, 500));
-
-    let parsed;
-    try {
-      parsed = JSON.parse(content);
-    } catch {
-      console.error("[Reasoning] Failed to parse JSON:", content);
-      throw new Error(`Invalid JSON from reasoning model: ${content.substring(0, 500)}`);
-    }
-
-    const actions = parsed.actions || [parsed.action];
-
-    return {
-      decision: {
-        reasoning: parsed.reasoning,
-        action: actions[0],
-        actions: actions,
-        visionFocus: parsed.visionFocus,
-        question: parsed.question,
-        confidence: parsed.confidence,
-      } as ActionDecision,
-      assistantMessage: content,
-    };
+    console.log("[Reasoning] Response received, finish_reason:", response.choices[0]?.finish_reason);
+    return response;
   }
 
   static hasApiKeys(): boolean {
