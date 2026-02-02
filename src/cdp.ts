@@ -151,44 +151,51 @@ export async function waitForPageReady(tabId: number, timeout = 5000): Promise<v
 }
 
 export async function captureScreenshot(tabId: number): Promise<string> {
-  // Hide overlay before capturing
-  await chrome.tabs.sendMessage(tabId, { type: "HIDE_OVERLAY" }).catch((e) => {
-    console.warn("[Screenshot] Failed to hide overlay:", e);
-  });
+  return withHiddenOverlay(tabId, async () => {
+    await ensureDebugger(tabId);
 
-  // Small delay to ensure overlay is hidden
+    const { data } = (await chrome.debugger.sendCommand({ tabId }, "Page.captureScreenshot", {
+      format: "jpeg",
+      quality: 85,
+    })) as { data: string };
+
+    return data;
+  });
+}
+
+async function hideOverlay(tabId: number): Promise<void> {
+  await chrome.tabs.sendMessage(tabId, { type: "HIDE_OVERLAY" }).catch(() => {});
   await new Promise((resolve) => setTimeout(resolve, 50));
+}
 
-  await ensureDebugger(tabId);
+async function showOverlay(tabId: number): Promise<void> {
+  await chrome.tabs.sendMessage(tabId, { type: "SHOW_OVERLAY" }).catch(() => {});
+}
 
-  const result = (await chrome.debugger.sendCommand({ tabId }, "Page.captureScreenshot", {
-    format: "jpeg",
-    quality: 85,
-  })) as { data: string };
-
-  // Show overlay again
-  await chrome.tabs.sendMessage(tabId, { type: "SHOW_OVERLAY" }).catch((e) => {
-    console.warn("[Screenshot] Failed to show overlay:", e);
-  });
-
-  return result.data;
+async function withHiddenOverlay<T>(tabId: number, fn: () => Promise<T>): Promise<T> {
+  await hideOverlay(tabId);
+  try {
+    return await fn();
+  } finally {
+    await showOverlay(tabId);
+  }
 }
 
 export async function executeAction(tabId: number, action: BrowserAction): Promise<void> {
   switch (action.action) {
     case "click":
       if (action.x !== undefined && action.y !== undefined) {
-        await click(tabId, action.x, action.y);
+        await withHiddenOverlay(tabId, () => click(tabId, action.x!, action.y!));
       }
       break;
     case "type":
-      await type(tabId, action.text);
+      await withHiddenOverlay(tabId, () => type(tabId, action.text));
       break;
     case "press":
-      await press(tabId, action.key);
+      await withHiddenOverlay(tabId, () => press(tabId, action.key));
       break;
     case "scroll":
-      await scroll(tabId, action.direction);
+      await withHiddenOverlay(tabId, () => scroll(tabId, action.direction));
       break;
     case "wait":
       await new Promise((resolve) => setTimeout(resolve, action.duration));
