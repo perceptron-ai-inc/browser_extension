@@ -29,7 +29,7 @@ export function ChatOverlay({ defaultOpen = false, draggable = true }: ChatOverl
   const isRunning = status === "active";
 
   const messagesRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   // Clamp position to viewport
   const clampPosition = useCallback((x: number, y: number) => {
@@ -199,7 +199,8 @@ export function ChatOverlay({ defaultOpen = false, draggable = true }: ChatOverl
   };
 
   const handleKeyDown = (e: KeyboardEvent) => {
-    if (e.key === "Enter" && input.trim()) {
+    // Enter sends message, Shift+Enter adds newline
+    if (e.key === "Enter" && !e.shiftKey && input.trim()) {
       e.preventDefault();
       sendMessage();
     }
@@ -246,13 +247,12 @@ export function ChatOverlay({ defaultOpen = false, draggable = true }: ChatOverl
       </div>
 
       <div class="agent-sidebar-input">
-        <input
+        <textarea
           ref={inputRef}
-          type="text"
           placeholder={isRunning ? "Running..." : "What should I do?"}
           value={input}
           disabled={isRunning}
-          onInput={(e) => setInput((e.target as HTMLInputElement).value)}
+          onInput={(e) => setInput((e.target as HTMLTextAreaElement).value)}
           onKeyDown={handleKeyDown}
         />
         <button onClick={isRunning ? stopAutomation : sendMessage} disabled={!isRunning && !input.trim()}>
