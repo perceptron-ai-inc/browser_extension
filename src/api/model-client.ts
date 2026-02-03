@@ -68,7 +68,7 @@ export class ModelClient {
    */
   async findElement(
     base64Image: string,
-    description: string,
+    query: string,
     viewportWidth: number,
     viewportHeight: number,
   ): Promise<{ x: number; y: number }> {
@@ -76,7 +76,10 @@ export class ModelClient {
       model: VISION_MODEL,
       messages: [
         hintMessage("POINT"),
-        ChatClient.message([ChatClient.imagePart(base64Image), ChatClient.textPart(`Point to the ${description}`)]),
+        ChatClient.message([
+          ChatClient.imagePart(base64Image),
+          ChatClient.textPart(`${query}. Say NOT FOUND if missing.`),
+        ]),
       ],
       temperature: 0,
     });
@@ -84,6 +87,10 @@ export class ModelClient {
     const content = response.choices[0].message.content;
     console.log(`[Vision] Raw response: ${content}`);
     console.log(`[Vision] Viewport: ${viewportWidth}x${viewportHeight}`);
+
+    if (content.toUpperCase().includes("NOT FOUND")) {
+      throw new Error(`Element not found for query: "${query}"`);
+    }
 
     const match = content.match(/(\d+)\s*,\s*(\d+)/);
     if (!match) {

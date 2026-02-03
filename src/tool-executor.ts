@@ -111,31 +111,31 @@ export async function executeToolCall(
         return "Error: No screenshot available. Call capture_screenshot first.";
       }
 
-      const target = args.target as string;
-      onStatus({ status: "analyzing", message: `Finding element: ${target}` });
+      const query = args.query as string;
+      onStatus({ status: "analyzing", message: `Finding: ${query}` });
 
       try {
         const coords = await client.findElement(
           toolState.currentScreenshot,
-          target,
+          query,
           toolState.viewport.width,
           toolState.viewport.height,
         );
 
         onStatus({
           status: "pointing",
-          message: target,
+          message: query,
           screenshot: toolState.currentScreenshot,
           pointX: (coords.x / toolState.viewport.width) * 100,
           pointY: (coords.y / toolState.viewport.height) * 100,
         });
 
         // Store for use in subsequent click
-        toolState.lastFoundElement = target;
+        toolState.lastFoundElement = query;
 
-        return `Element "${target}" found at coordinates: x=${coords.x}, y=${coords.y}`;
+        return `Element found at coordinates: x=${coords.x}, y=${coords.y}`;
       } catch (e) {
-        return `Failed to find element "${target}": ${e instanceof Error ? e.message : "Unknown error"}`;
+        return `Failed to find element: ${e instanceof Error ? e.message : "Unknown error"}`;
       }
     }
 

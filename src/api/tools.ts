@@ -46,13 +46,13 @@ export const AUTOMATION_TOOLS = [
       parameters: {
         type: "object",
         properties: {
-          target: {
+          query: {
             type: "string",
             description:
-              "Description of the element to find (e.g., 'the blue Submit button', 'search input field', 'first search result link')",
+              "A query for the vision model to locate the element (e.g., 'Point to the blue Submit button at the bottom of the form', 'Find the search input field with placeholder text')",
           },
         },
-        required: ["target"],
+        required: ["query"],
         additionalProperties: false,
       },
     },
@@ -84,7 +84,7 @@ export const AUTOMATION_TOOLS = [
           },
           key: {
             type: "string",
-            enum: ["Enter", "Escape", "ArrowDown", "ArrowUp"],
+            enum: ["Enter", "Escape", "Backspace", "ArrowDown", "ArrowUp"],
             description: "Key to press (required for press)",
           },
           direction: {

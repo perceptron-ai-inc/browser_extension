@@ -59,6 +59,7 @@ async function type(tabId: number, text: string): Promise<void> {
 const KEY_DEFINITIONS: Record<string, { keyCode: number; code: string; text?: string }> = {
   Enter: { keyCode: 13, code: "Enter", text: "\r" },
   Escape: { keyCode: 27, code: "Escape" },
+  Backspace: { keyCode: 8, code: "Backspace" },
   ArrowUp: { keyCode: 38, code: "ArrowUp" },
   ArrowDown: { keyCode: 40, code: "ArrowDown" },
 };
