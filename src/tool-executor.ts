@@ -14,6 +14,7 @@ export interface ToolState {
   currentScreenshot: string | null;
   viewport: { width: number; height: number } | null;
   lastAnalysis: string | null;
+  lastFoundElement: string | null;
 }
 
 export interface ToolStatus {
@@ -129,6 +130,9 @@ export async function executeToolCall(
           pointY: (coords.y / toolState.viewport.height) * 100,
         });
 
+        // Store for use in subsequent click
+        toolState.lastFoundElement = target;
+
         return `Element "${target}" found at coordinates: x=${coords.x}, y=${coords.y}`;
       } catch (e) {
         return `Failed to find element "${target}": ${e instanceof Error ? e.message : "Unknown error"}`;
@@ -149,15 +153,18 @@ export async function executeToolCall(
             return "Error: click requires x and y coordinates. Use find_element first to get coordinates.";
           }
 
-          onStatus({ status: "executing", message: `Clicking at (${x}, ${y})` });
+          const clickTarget = toolState.lastFoundElement || `(${x}, ${y})`;
+
+          onStatus({ status: "executing", message: `Clicking on ${clickTarget}` });
           sendToContentScript(tabId, { type: "FLASH_CLICK", x, y }).catch(() => {});
 
           try {
             await executeAction(tabId, { action: "click", x, y });
-            // Invalidate screenshot after click (page may have changed)
+            // Invalidate screenshot and element after click (page may have changed)
             toolState.currentScreenshot = null;
             toolState.viewport = null;
-            return `Clicked at (${x}, ${y})`;
+            toolState.lastFoundElement = null;
+            return `Clicked on ${clickTarget}`;
           } catch (e) {
             return `Failed to click: ${e instanceof Error ? e.message : "Unknown error"}`;
           }

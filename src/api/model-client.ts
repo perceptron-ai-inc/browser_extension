@@ -142,7 +142,7 @@ export class ModelClient {
       messages,
       tools,
       tool_choice: "auto",
-      temperature: 0.1,
+      temperature: 0,
     });
 
     console.log("[Reasoning] Response received, finish_reason:", response.choices[0]?.finish_reason);

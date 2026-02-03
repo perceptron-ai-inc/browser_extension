@@ -94,6 +94,7 @@ async function runAutomation(tabId: number, goal: string): Promise<void> {
     currentScreenshot: null,
     viewport: null,
     lastAnalysis: null,
+    lastFoundElement: null,
   };
 
   let iteration = 0;
