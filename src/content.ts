@@ -2,7 +2,12 @@
  * Content script - provides viewport info and draws box overlays
  */
 
-import decodeHtml from "decode-html";
+// Decode HTML entities like &#39; -> ' and &amp; -> &
+function decodeHtml(text: string): string {
+  const textarea = document.createElement("textarea");
+  textarea.innerHTML = text;
+  return textarea.value;
+}
 
 // Container for box overlays
 let boxContainer: HTMLDivElement | null = null;

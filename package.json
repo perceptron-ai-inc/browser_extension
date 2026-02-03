@@ -30,7 +30,6 @@
     "*.{ts,tsx,js,cjs,json,css,html,md}": "prettier --write"
   },
   "dependencies": {
-    "decode-html": "^2.0.0",
     "preact": "^10.28.2"
   }
 }
