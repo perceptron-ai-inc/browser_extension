@@ -15,12 +15,14 @@ const RETRY_DELAY_MS = 1000;
 // Client is initialized with API keys from .env at build time
 const client = new ModelClient();
 
-// Per-tab automation state
+// Per-tab automation state (keyed by origin tab)
 interface TabState {
   isRunning: boolean;
   goal: string | null;
   actionHistory: ActionHistoryEntry[];
   conversationMessages: ChatMessage[];
+  originTabId: number | null; // For chat history
+  tabId: number; // Current tab (changes if site opens popup)
 }
 
 const tabStates = new Map<number, TabState>();
@@ -32,10 +34,26 @@ function getTabState(tabId: number): TabState {
       goal: null,
       actionHistory: [],
       conversationMessages: [],
+      originTabId: null, // Set when opened by another tab
+      tabId: tabId,
     });
   }
   return tabStates.get(tabId)!;
 }
+
+// Switch automation to new tab when site opens a popup
+chrome.tabs.onCreated.addListener((tab) => {
+  if (!tab.openerTabId || !tab.id) return;
+
+  const state = tabStates.get(tab.openerTabId);
+  if (state?.isRunning) {
+    console.log(`[Agent] Switching to new tab ${tab.id}`);
+    state.originTabId = tab.openerTabId;
+    state.tabId = tab.id;
+    tabStates.delete(tab.openerTabId);
+    tabStates.set(tab.id, state);
+  }
+});
 
 // Clean up when tab is closed
 chrome.tabs.onRemoved.addListener((tabId) => {
@@ -52,20 +70,18 @@ const CHAT_HISTORY_MAP: Record<string, "action" | "assistant"> = {
 };
 
 // Broadcast status update to content script overlay
-function broadcastStatus(tabId: number, update: Omit<StatusUpdate, "type">): void {
+function broadcastStatus(state: TabState, update: Omit<StatusUpdate, "type">): void {
   const message = {
     type: "STATUS_UPDATE",
     ...update,
   } as StatusUpdate;
 
-  // Add to chat history based on status
   const type = CHAT_HISTORY_MAP[update.status];
   if (type && update.message) {
-    addToChatHistory(tabId, { type, content: update.message });
+    addToChatHistory(state.originTabId ?? state.tabId, { type, content: update.message });
   }
 
-  // Send to content script in the tab
-  chrome.tabs.sendMessage(tabId, message).catch((e) => {
+  chrome.tabs.sendMessage(state.tabId, message).catch((e) => {
     console.warn("[Agent] Failed to send status to content script:", e);
   });
 }
@@ -105,11 +121,11 @@ async function runAutomation(tabId: number, goal: string): Promise<void> {
     console.log(`[Agent] Starting iteration ${iteration}`);
 
     try {
-      // Add current URL context
-      const tab = await chrome.tabs.get(tabId);
+      // Add current URL context (state.tabId may have changed if site opened popup)
+      const tab = await chrome.tabs.get(state.tabId);
       const urlMessage = ChatClient.message(`Current URL: ${tab.url}`, "user");
 
-      broadcastStatus(tabId, {
+      broadcastStatus(state, {
         status: "reasoning",
         iteration,
         message: "Deciding next action...",
@@ -132,7 +148,7 @@ async function runAutomation(tabId: number, goal: string): Promise<void> {
       if (!assistantMessage.tool_calls || assistantMessage.tool_calls.length === 0) {
         // Model responded with text only - might be done or need clarification
         if (assistantMessage.content) {
-          broadcastStatus(tabId, {
+          broadcastStatus(state, {
             status: "completed",
             iteration,
             message: assistantMessage.content,
@@ -153,8 +169,8 @@ async function runAutomation(tabId: number, goal: string): Promise<void> {
         let result: string;
 
         try {
-          result = await executeToolCall(tabId, client, name as ToolName, args, toolState, (status) => {
-            broadcastStatus(tabId, { ...status, iteration });
+          result = await executeToolCall(state.tabId, client, name as ToolName, args, toolState, (status) => {
+            broadcastStatus(state, { ...status, iteration });
           });
         } catch (error) {
           result = `Error: ${error instanceof Error ? error.message : "Unknown error"}`;
@@ -171,7 +187,7 @@ async function runAutomation(tabId: number, goal: string): Promise<void> {
 
         // Check for terminal states
         if (name === "complete") {
-          broadcastStatus(tabId, {
+          broadcastStatus(state, {
             status: "completed",
             iteration,
             message: args.result as string,
@@ -181,7 +197,7 @@ async function runAutomation(tabId: number, goal: string): Promise<void> {
         }
 
         if (name === "ask_user") {
-          broadcastStatus(tabId, {
+          broadcastStatus(state, {
             status: "waiting_for_user",
             iteration,
             message: args.prompt as string,
@@ -208,7 +224,7 @@ async function runAutomation(tabId: number, goal: string): Promise<void> {
       const isRetriable = error instanceof ApiError && error.isRetriable;
 
       if (!isRetriable || retryCount >= MAX_RETRIES) {
-        broadcastStatus(tabId, {
+        broadcastStatus(state, {
           status: "error",
           iteration,
           message: errorMessage,
@@ -222,7 +238,7 @@ async function runAutomation(tabId: number, goal: string): Promise<void> {
   }
 
   if (iteration >= MAX_ITERATIONS) {
-    broadcastStatus(tabId, {
+    broadcastStatus(state, {
       status: "stopped",
       iteration,
       message:
@@ -257,7 +273,7 @@ chrome.runtime.onMessage.addListener((message: ExtensionMessage, sender, sendRes
       if (tabId) {
         const state = getTabState(tabId);
         state.isRunning = false;
-        broadcastStatus(tabId, {
+        broadcastStatus(state, {
           status: "stopped",
           iteration: state.actionHistory.length,
           message: "Stopped by user",
