@@ -34,7 +34,6 @@ export type BrowserAction = ClickAction | TypeAction | PressAction | ScrollActio
 // Action history entry
 export interface ActionHistoryEntry {
   action: BrowserAction;
-  reasoning: string;
   timestamp: number;
   success?: boolean;
 }
@@ -72,5 +71,6 @@ export type ExtensionMessage =
   | { type: "RUN"; goal: string }
   | { type: "STOP" }
   | { type: "GET_STATUS" }
+  | { type: "GET_CHAT_HISTORY" }
   | { type: "CHECK_API_KEY" }
   | StatusUpdate;

@@ -135,22 +135,6 @@ export async function executeToolCall(
       }
     }
 
-    case "ask_vision": {
-      if (!toolState.currentScreenshot) {
-        return "Error: No screenshot available. Call capture_screenshot first.";
-      }
-
-      const question = args.question as string;
-      onStatus({ status: "analyzing", message: `Asking: ${question}` });
-
-      try {
-        const answer = await client.askQuestion(toolState.currentScreenshot, question);
-        return answer;
-      } catch (e) {
-        return `Failed to answer question: ${e instanceof Error ? e.message : "Unknown error"}`;
-      }
-    }
-
     case "execute_action": {
       const action = args.action as string;
 

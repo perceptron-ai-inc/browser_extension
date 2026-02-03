@@ -134,27 +134,6 @@ export class ModelClient {
   }
 
   /**
-   * Ask a specific question about the screenshot
-   */
-  async askQuestion(base64Image: string, question: string): Promise<string> {
-    const response = await visionClient.chatCompletion({
-      model: VISION_MODEL,
-      messages: [
-        hintMessage("THINK"),
-        ChatClient.message([
-          ChatClient.imagePart(base64Image),
-          ChatClient.textPart(
-            `Answer this question based only on what you see in the image. Be brief (1-2 sentences).\n\nQuestion: ${question}`,
-          ),
-        ]),
-      ],
-      temperature: 0,
-    });
-
-    return response.choices[0].message.content;
-  }
-
-  /**
    * Chat with reasoning model using tool calling
    */
   async chatWithTools(messages: ChatMessage[], tools: object[]): Promise<ChatCompletionResponse> {

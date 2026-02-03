@@ -8,7 +8,7 @@ export const AUTOMATION_TOOLS = [
     function: {
       name: "capture_screenshot",
       description:
-        "Capture the current browser viewport as an image. Use this before any vision tools (analyze_page, find_element, ask_vision).",
+        "Capture the current browser viewport as an image. Use this before any vision tools (analyze_page, find_element).",
       parameters: {
         type: "object",
         properties: {},
@@ -53,26 +53,6 @@ export const AUTOMATION_TOOLS = [
           },
         },
         required: ["target"],
-        additionalProperties: false,
-      },
-    },
-  },
-  {
-    type: "function" as const,
-    function: {
-      name: "ask_vision",
-      description:
-        "Ask a question about what's visible in the current screenshot. Use to verify actions or gather information. Requires capture_screenshot first.",
-      parameters: {
-        type: "object",
-        properties: {
-          question: {
-            type: "string",
-            description:
-              "The question to answer (e.g., 'What text is in the search box?', 'Is the login form visible?', 'What error message is shown?')",
-          },
-        },
-        required: ["question"],
         additionalProperties: false,
       },
     },
@@ -170,7 +150,6 @@ export type ToolName =
   | "capture_screenshot"
   | "analyze_page"
   | "find_element"
-  | "ask_vision"
   | "execute_action"
   | "ask_user"
   | "complete";

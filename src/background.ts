@@ -193,7 +193,6 @@ async function runAutomation(tabId: number, goal: string): Promise<void> {
         if (name === "execute_action") {
           state.actionHistory.push({
             action: { action: args.action as string, ...args },
-            reasoning: "Tool-based execution",
             timestamp: Date.now(),
             success: !result.startsWith("Error"),
           });
