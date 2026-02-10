@@ -182,6 +182,75 @@ async function withHiddenOverlay<T>(tabId: number, fn: () => Promise<T>): Promis
   }
 }
 
+interface AXNode {
+  nodeId: string;
+  ignored?: boolean;
+  role?: { value: string };
+  name?: { value: string };
+  properties?: Array<{ name: string; value: { value: unknown } }>;
+  childIds?: string[];
+}
+
+const SKIP_ROLES = new Set(["none", "generic", "InlineTextBox"]);
+
+function formatA11yTree(nodes: AXNode[]): string {
+  const nodeMap = new Map(nodes.map((n) => [n.nodeId, n]));
+  const lines: string[] = [];
+  const visited = new Set<string>();
+
+  function getProp(node: AXNode, name: string): unknown {
+    return node.properties?.find((p) => p.name === name)?.value.value;
+  }
+
+  function isHidden(node: AXNode): boolean {
+    return !!(node.ignored || getProp(node, "hidden") || getProp(node, "hiddenRoot"));
+  }
+
+  function walk(nodeId: string, depth: number): void {
+    if (visited.has(nodeId)) return;
+    visited.add(nodeId);
+
+    const node = nodeMap.get(nodeId);
+    if (!node || isHidden(node)) return;
+
+    const role = node.role?.value || "unknown";
+    const children = node.childIds || [];
+
+    if (SKIP_ROLES.has(role)) {
+      children.forEach((id) => walk(id, depth));
+      return;
+    }
+
+    const props = [
+      getProp(node, "focused") && "focused",
+      getProp(node, "disabled") && "disabled",
+      getProp(node, "checked") !== undefined && (getProp(node, "checked") ? "checked" : "unchecked"),
+      getProp(node, "expanded") !== undefined && (getProp(node, "expanded") ? "expanded" : "collapsed"),
+      getProp(node, "selected") && "selected",
+    ].filter(Boolean);
+
+    const name = node.name?.value ? ` "${node.name.value}"` : "";
+    const propsStr = props.length ? ` (${props.join(", ")})` : "";
+    lines.push(`${"  ".repeat(depth)}${role}${name}${propsStr}`);
+
+    children.forEach((id) => walk(id, depth + 1));
+  }
+
+  const root = nodes.find((n) => !nodes.some((o) => o.childIds?.includes(n.nodeId)));
+  if (root) walk(root.nodeId, 0);
+
+  return lines.join("\n");
+}
+
+export async function getAccessibilityTree(tabId: number): Promise<string> {
+  await ensureDebugger(tabId);
+  await chrome.debugger.sendCommand({ tabId }, "Accessibility.enable");
+  const { nodes } = (await chrome.debugger.sendCommand({ tabId }, "Accessibility.getFullAXTree")) as {
+    nodes: AXNode[];
+  };
+  return formatA11yTree(nodes);
+}
+
 export async function executeAction(tabId: number, action: BrowserAction): Promise<void> {
   switch (action.action) {
     case "click":

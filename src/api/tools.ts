@@ -60,6 +60,20 @@ export const AUTOMATION_TOOLS = [
   {
     type: "function" as const,
     function: {
+      name: "get_a11y_tree",
+      description:
+        "Get the accessibility tree of the current page. Returns a structured list of interactive elements with their roles, names, and states (focused, disabled, checked, etc.). Useful for understanding page structure without vision.",
+      parameters: {
+        type: "object",
+        properties: {},
+        required: [],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
       name: "execute_action",
       description: "Execute a browser action.",
       parameters: {
@@ -150,6 +164,7 @@ export type ToolName =
   | "capture_screenshot"
   | "analyze_page"
   | "find_element"
+  | "get_a11y_tree"
   | "execute_action"
   | "ask_user"
   | "complete";

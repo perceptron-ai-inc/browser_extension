@@ -5,7 +5,7 @@
 import { ModelClient, type BoundingBox } from "./api/model-client.js";
 import type { ToolName } from "./api/tools.js";
 import { isInternalUrl } from "./url-utils.js";
-import { executeAction, waitForPageReady, captureScreenshot } from "./cdp.js";
+import { executeAction, waitForPageReady, captureScreenshot, getAccessibilityTree } from "./cdp.js";
 import { getViewportDimensions, sendToContentScript } from "./tab-utils.js";
 
 const NAVIGATION_DELAY_MS = 2000;
@@ -103,6 +103,22 @@ export async function executeToolCall(
         return pageState;
       } catch (e) {
         return `Failed to analyze page: ${e instanceof Error ? e.message : "Unknown error"}`;
+      }
+    }
+
+    case "get_a11y_tree": {
+      onStatus({ status: "analyzing", message: "Getting accessibility tree..." });
+
+      const tab = await chrome.tabs.get(tabId);
+      if (isInternalUrl(tab.url!)) {
+        return "Cannot get accessibility tree on this page. Use execute_action with navigate to go to a website first.";
+      }
+
+      try {
+        const tree = await getAccessibilityTree(tabId);
+        return tree;
+      } catch (e) {
+        return `Failed to get accessibility tree: ${e instanceof Error ? e.message : "Unknown error"}`;
       }
     }
 
