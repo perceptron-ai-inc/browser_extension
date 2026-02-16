@@ -13,7 +13,6 @@ interface ChatOverlayProps {
   draggable?: boolean;
 }
 
-// Full Perceptron logo with icon and text
 const PerceptronLogo = () => <img class="agent-logo" src={chrome.runtime.getURL("icons/logo.svg")} alt="Perceptron" />;
 
 export function ChatOverlay({ defaultOpen = false, draggable = true }: ChatOverlayProps) {
