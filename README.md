@@ -1,6 +1,6 @@
 # Perceptron Agent
 
-https://github.com/user-attachments/assets/2d8f0ecc-f6ca-4fe5-bbc2-a48d0f8f41d4
+https://github.com/user-attachments/assets/7b8c27c2-b9d6-4b32-a8f0-6ae20ee07ca1
 
 A Chrome extension that automates browser tasks using vision and reasoning models.
 
